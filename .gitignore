@@ -1,0 +1,11 @@
+*.sdf
+*.sln
+x64
+soubory/*
+Release/*
+nacti/*
+nacist/*
+ipch/*
+Debag/*
+ConsoleApplication1/*
+
