@@ -38,12 +38,12 @@ int nalezeniNazvuFotek(String adresa, vector<String> &nazvyFotek, int maxPocet)
 		}
 		cout << "existuje " << endl;
 		citac++;
+		nazvyFotek.push_back(nazevSouboru);
+
 		if (maxPocet + 10 <= citac){
 			cout << "Omezeni maxPoctu fotek: " << maxPocet << endl;
 			break;
 		}
-
-		nazvyFotek.push_back(nazevSouboru);
 	}
 	return 0;
 }
@@ -273,18 +273,21 @@ vector<Point3f> body3DpomociRT(vector<Mat> rotTran, vector<vector<Point2f>> dvoj
 	//------------------------------------------------------------------------------
 	for (int i = 0; i < dvojiceBodu[0].size(); i++){ //cyklus pres dvojice bodu
 		float yo = dvojiceBodu[1][i].y*pixel; // y`*pixel
-		Mat Y; //bod Y z prvniho borazu
-		Y.push_back(dvojiceBodu[0][i].x*pixel);// x*pixel
-		Y.push_back(dvojiceBodu[0][i].y*pixel);// y*pixel
-		Y.push_back(1.0);// z //doplnek
+		Point3f Y; //bod Y z prvniho borazu s doplnkem
+		Y.x = dvojiceBodu[0][i].x*pixel;// x*pixel
+		Y.y = dvojiceBodu[0][i].y*pixel;// y*pixel
+		Y.z = 1.0;// z //doplnek
+		//----------------------vzorecek pro dopocet z-ove souzadnice (hloubka)
+		Mat Ymat = Mat(Y);
+		Ymat.convertTo(Ymat, CV_64F);
 		Mat citatelJmenovatel = (rotTran[0].col(1) - yo*rotTran[0].col(2)); //Rotace(druhy radek) - y` * /Rotace(treti radek) 
-		float a = citatelJmenovatel.dot(rotTran[1].t()); // citatel = citatelJmenovatel * Y
-		float b = citatelJmenovatel.dot(Y.t());
+		float a = citatelJmenovatel.dot(rotTran[1]); // citatel = citatelJmenovatel * Y
+		
+		float b = citatelJmenovatel.dot(Mat(Ymat));
 		float hloubka = a / b; //vypocet z-ove souradnice bodu Y
-		bod3D.x = dvojiceBodu[0][i].x*pixel;
-		bod3D.y = dvojiceBodu[0][i].y*pixel;
-		bod3D.z = hloubka;
-		body3D.push_back(bod3D);
+		
+		Y.z = hloubka;
+		body3D.push_back(Y);
 	}
 	return body3D;
 }
@@ -302,6 +305,8 @@ int main()
 	vector<String> nazvySouboru;
 	cameraMatrix = readXmlCameraMatrix(nazevSouboruXmlKal);
 
+	
+	cout << "pocet nazvu forek" << nazvyFotek.size() << endl;
 
 	for (int i = 0; i < nazvyFotek.size() - 1; i++){
 		// matches
@@ -309,20 +314,22 @@ int main()
 		all_matches.push_back(good_matches);
 		
 	}	
-	cout << "matchovani bodu dokonceno v poctu" << all_matches.size() << endl;
+	int pocetParufotek = all_matches.size();
+	cout << "matchovani bodu dokonceno v poctu" << pocetParufotek << endl;
 
-	for (int i = 0; i < all_matches.size(); i++){
+	for (int i = 0; i < pocetParufotek; i++){
 		vector<vector<Point2f>> dvojiceBodu2D = parovaniDodu(all_matches[i], All_keypoints[i][0], All_keypoints[i][1]);
-		cout << "vytvoreni dvojic 2D bodu" << endl;
+		cout <<i<< ": vytvoreni dvojic 2D bodu" << endl;
 		Mat ffmatice = ffMatrix(dvojiceBodu2D);//find Fundamental Matatrix
-		cout << "vytvorena fundamentalni matice" << endl;
+		cout << i << ": vytvorena fundamentalni matice" << endl;
 
 		
-		// rozklad na rotaci a translaci
-		vector<Mat> rotTran = rozkladFMnaRotaciTranslaci(ffmatice, cameraMatrix);
-		cout << "vytvorena rotacni a translacni matice z fundamental matrix" << endl;
-		//vytvoreni 3D bodu
-
+		
+		vector<Mat> rotTran = rozkladFMnaRotaciTranslaci(ffmatice, cameraMatrix); // rozklad na rotaci a translaci
+		cout << i << ": vytvorena rotacni a translacni matice z fundamental matrix" << endl;
+		vector<Point3f> body3D = body3DpomociRT(rotTran, dvojiceBodu2D);//vytvoreni 3D bodu
+		cout << body3D << endl;
+		cout << i << ": vytvoreny 3D body" << endl;
 	}
 	system("PAUSE");
 	return 0;
