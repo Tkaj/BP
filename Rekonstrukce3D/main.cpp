@@ -242,7 +242,7 @@ Mat ffMatrix(vector<vector<Point2f>> dvojiceBodu2D){
 vector<Mat> rozkladFMnaRotaciTranslaci(Mat ffmatice, Mat calibrateCamera){
 	Mat E = calibrateCamera*ffmatice*calibrateCamera;
 	vector<Mat> rotTran;
-	
+
 
 	SVD svd(E, SVD::MODIFY_A);
 	Mat svd_u = svd.u;
@@ -258,17 +258,17 @@ vector<Mat> rozkladFMnaRotaciTranslaci(Mat ffmatice, Mat calibrateCamera){
 
 	Mat R2 = svd_u * Mat(W) * svd_vt; //or svd_u * Mat(W) * svd_vt; 
 	Mat t2 = -svd_u.col(2); //or -svd_u.col(2)
-	/*cout << R1<<endl;
+	cout << R1<<endl;
 	cout << R2 << endl;
 	cout << t1 << endl;
-	cout << t2<< endl;*/
-
+	cout << t2<< endl;
+	
 	//rotTran.push_back(R1);
 	//rotTran.push_back(t1);
 
 	rotTran.push_back(R2);
 	rotTran.push_back(t2);
-	
+
 	return rotTran;
 }
 
@@ -288,8 +288,7 @@ vector<Point3f> body3DpomociRT(vector<Mat> rotTran, vector<vector<Point2f>> dvoj
 		Ymat.convertTo(Ymat, CV_64F);
 		Mat citatelJmenovatel = (rotTran[0].col(1) - yo*rotTran[0].col(2)); //Rotace(druhy radek) - y` * /Rotace(treti radek) 
 		float a = citatelJmenovatel.dot(rotTran[1]); // citatel = citatelJmenovatel * Y
-		
-		float b = citatelJmenovatel.dot(Mat(Ymat));
+		float b = citatelJmenovatel.dot(Ymat);
 		float hloubka = a / b; //vypocet z-ove souradnice bodu Y
 		
 		Y.z = hloubka;
@@ -303,9 +302,8 @@ vector<Mat> vypocetProjekcnichMatic(vector<Mat> rotTran, Mat calibrateCamera){
 		
 	Mat P2 = Mat::eye(3, 3, CV_64F);
 	
-	hconcat(P2, rotTran[1], P2);
-	P2 = calibrateCamera*rotTran[0]*P2;
-
+	hconcat(P2, -rotTran[1], P2);
+	P2 = rotTran[0] * calibrateCamera*P2;
 	vector<Mat> P1P2;
 	P1P2.push_back(P1);
 	P1P2.push_back(P2);
@@ -348,7 +346,7 @@ int main()
 		vector<Mat> rotTran = rozkladFMnaRotaciTranslaci(ffmatice, cameraMatrix); // rozklad na rotaci a translaci
 		cout << i << ": vytvorena rotacni a translacni matice z fundamental matrix" << endl;
 		vector<Point3f> body3D = body3DpomociRT(rotTran, dvojiceBodu2D);//vytvoreni 3D bodu
-		cout << body3D << endl;
+		//cout << body3D << endl;
 		cout << i << ": vytvoreny 3D body" << endl;
 
 
@@ -369,7 +367,7 @@ int main()
 			bod3Dz4D.z = body4D.at<float>(k,2) / delitel;
 			body3Dz4D.push_back(bod3Dz4D);
 		}
-		cout << body3Dz4D << endl;
+		//cout << body3Dz4D << endl;
 		cout << i << ": vypocet 4D bodu pomoci projekcnich matic" << endl;
 	
 	}
