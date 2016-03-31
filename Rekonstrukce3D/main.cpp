@@ -23,7 +23,8 @@ int nalezeniNazvuFotek(String adresa, vector<String> &nazvyFotek, int maxPocet)
 {
 	String nazevSouboru;
 	Mat frame; // obrazek
-	int citac = 10; // citac pro vstupni soubory
+	int pocatek = 38;
+		int citac = pocatek; // citac pro vstupni soubory
 	
 	while (true) {
 		if (citac < 100){nazevSouboru = adresa + "image0" + to_string(citac) + ".jpg";}
@@ -40,7 +41,7 @@ int nalezeniNazvuFotek(String adresa, vector<String> &nazvyFotek, int maxPocet)
 		citac++;
 		nazvyFotek.push_back(nazevSouboru);
 
-		if (maxPocet + 10 <= citac){
+		if (maxPocet + pocatek <= citac){
 			cout << "Omezeni maxPoctu fotek: " << maxPocet << endl;
 			break;
 		}
@@ -257,11 +258,16 @@ vector<Mat> rozkladFMnaRotaciTranslaci(Mat ffmatice, Mat calibrateCamera){
 
 	Mat R2 = svd_u * Mat(W) * svd_vt; //or svd_u * Mat(W) * svd_vt; 
 	Mat t2 = -svd_u.col(2); //or -svd_u.col(2)
+	/*cout << R1<<endl;
+	cout << R2 << endl;
+	cout << t1 << endl;
+	cout << t2<< endl;*/
 
+	//rotTran.push_back(R1);
+	//rotTran.push_back(t1);
 
-
-	rotTran.push_back(R1);
-	rotTran.push_back(t1);
+	rotTran.push_back(R2);
+	rotTran.push_back(t2);
 	
 	return rotTran;
 }
@@ -291,12 +297,26 @@ vector<Point3f> body3DpomociRT(vector<Mat> rotTran, vector<vector<Point2f>> dvoj
 	}
 	return body3D;
 }
+vector<Mat> vypocetProjekcnichMatic(vector<Mat> rotTran, Mat calibrateCamera){
+	Mat P1 = Mat::eye(3, 4, CV_64F);
+	P1 = calibrateCamera*P1;
+		
+	Mat P2 = Mat::eye(3, 3, CV_64F);
+	
+	hconcat(P2, rotTran[1], P2);
+	P2 = calibrateCamera*rotTran[0]*P2;
 
+	vector<Mat> P1P2;
+	P1P2.push_back(P1);
+	P1P2.push_back(P2);
+	return P1P2;
+}
 int main()
 {
 	vector<vector<vector<KeyPoint>>> All_keypoints;
 	vector<Mat> All_ffmatice;
-	String adresa = "../soubory/fotoKostka/";;
+	String adresa = "../soubory/";
+	//String adresa = "../soubory/fotoKostka/";
 	vector<String> nazvyFotek;
 	nalezeniNazvuFotek(adresa, nazvyFotek, 2);
 	vector<vector<DMatch>> all_matches;
@@ -330,6 +350,28 @@ int main()
 		vector<Point3f> body3D = body3DpomociRT(rotTran, dvojiceBodu2D);//vytvoreni 3D bodu
 		cout << body3D << endl;
 		cout << i << ": vytvoreny 3D body" << endl;
+
+
+		vector<Mat> P1P2 = vypocetProjekcnichMatic(rotTran, cameraMatrix);//tvorba projekcnich matice
+		cout << i << ": vypocet projekcnich matic" << endl;
+		Mat body4D;
+		triangulatePoints(P1P2[0], P1P2[1], dvojiceBodu2D[0], dvojiceBodu2D[1], body4D);//triangulace bodu
+		
+		int pocetBod4D=body4D.cols;
+		body4D = body4D.t();
+		vector<Point3f> body3Dz4D;
+
+		for (int k = 0; k < pocetBod4D; k++){
+			float delitel =body4D.at<float>(k,3);
+			Point3f bod3Dz4D;
+			bod3Dz4D.x=body4D.at<float>(k, 0) / delitel;
+			bod3Dz4D.y = body4D.at<float>(k,1) / delitel;
+			bod3Dz4D.z = body4D.at<float>(k,2) / delitel;
+			body3Dz4D.push_back(bod3Dz4D);
+		}
+		cout << body3Dz4D << endl;
+		cout << i << ": vypocet 4D bodu pomoci projekcnich matic" << endl;
+	
 	}
 	system("PAUSE");
 	return 0;
