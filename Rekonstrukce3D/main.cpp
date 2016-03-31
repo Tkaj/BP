@@ -198,9 +198,7 @@ vector<DMatch> paroveKlicoveBody(String fotkaL, String fotkaP, vector<vector<vec
 
 	return good_matches;
 }
-
-Mat ffMatrix(vector<DMatch> matches, vector<KeyPoint> keypoints1, vector<KeyPoint> keypoints2){
-
+vector<vector<Point2f>> parovaniDodu(vector<DMatch> matches, vector<KeyPoint> keypoints1, vector<KeyPoint> keypoints2){
 	vector<cv::Point2f> points1, points2;
 	for (int i = 0; i < matches.size(); i++){
 		float qx = keypoints1[matches[i].queryIdx].pt.x;
@@ -210,23 +208,149 @@ Mat ffMatrix(vector<DMatch> matches, vector<KeyPoint> keypoints1, vector<KeyPoin
 		float ty = keypoints2[matches[i].trainIdx].pt.y;
 		points2.push_back(cv::Point2f(tx, ty));
 	}
-	Mat matrixFF = findFundamentalMat(Mat(points1), Mat(points2));
+
+	vector<vector<Point2f>> dvojiceBodu;
+	dvojiceBodu.push_back(points1);
+	dvojiceBodu.push_back(points2);
+
+	return dvojiceBodu;
+}
+
+
+
+bool readXmlvector(string nazevSouboruXmlKal, vector<vector<Point3f>> *objPoints, vector<vector<Point2f>> *imgPoints, Size *imageSize, Mat *cameraMatrix, Mat *distCoeffs, vector<Mat> *rvecs, vector<Mat> *tvecs, vector<String> *nazvySouboru)
+{
+
+
+	int pocet;
+	Mat camera;
+	Size velikost;
+	Mat diCo;
+	String nazvySoubor;
+	vector<vector<Point2f>> imgPoint;
+	Mat objPoint;
+	Mat rvec;
+	Mat tvec;
+	vector<Mat> rvecss;
+	vector<Mat> tvecss;
+
+
+	cout << "oteviram..." << endl;
+
+	FileStorage fr;
+	fr.open(nazevSouboruXmlKal, FileStorage::READ);
+
+	fr["pocet"] >> pocet;
+	fr["cameraMatrix"] >> camera;
+	fr["imageSize"] >> velikost;
+	fr["distCoeff"] >> diCo;
+	fr["objPoint"] >> objPoint;
+
+	//cout << "obj-konec: " << objPoint<< "\n";
+
+	///////////////////////////////obrazky start
+	FileNode pictures = fr["obrazky"];
+	FileNodeIterator it = pictures.begin(), it_end = pictures.end();
+	// iterate through a sequence using FileNodeIterator
+	for (int idx = 0; it != it_end; ++it, idx++)
+	{
+		//cout << "obrazek #" << idx << ": " << "\n";
+		//cout << (string)(*it)["nazvySouboru"];
+
+
+		//////////////////////////////imgpoint start
+		vector<Point2f> pointip_obr;
+		FileNode ip = (*it)["imgPoints"];
+		for (FileNodeIterator it_ip = ip.begin(); it_ip != ip.end(); ++it_ip)
+		{
+			Point2f pointip;
+			pointip.x = *it_ip;
+			++it_ip;
+			pointip.y = *it_ip;
+
+			pointip_obr.push_back(pointip);
+		}
+		//cout << "img point: "<< pointip_obr << "\n";
+		imgPoint.push_back(pointip_obr);
+
+		///////////////////////////////imgpoint end
+
+		(*it)["rvecs"] >> rvec;
+		rvecss.push_back(rvec);
+
+		(*it)["tvecs"] >> tvec;
+		tvecss.push_back(tvec);
+	}
+
+	fr.release();
+
+
+	Mat R1;
+	Mat R2;
+	Mat P1;
+	Mat P2;
+	Mat Q;
+
+
+	return true;
+}
+
+
+Mat ffMatrix(vector<vector<Point2f>> dvojiceBodu2D){
+	Mat matrixFF = findFundamentalMat(Mat(dvojiceBodu2D[0]), Mat(dvojiceBodu2D[1]));
 
 	return matrixFF;
 }
 
-/*
-void saveData(vector<DMatch> good_matches, Mat ffmatice, vector<KeyPoint> keypoints1, vector<KeyPoint> keypoints2,int kolikaty){
-	String jmenoXml = "keyMatchffMatrix" + kolikaty;
-	jmenoXml = jmenoXml + ".xml";
-	FileStorage fs(jmenoXml, FileStorage::WRITE);
-	fs << "good_matches" << good_matches;
-	fs << "keypoints1" << keypoints1;
-	fs << "keypoints2" << keypoints2;
+vector<Mat> rozkladFMnaRotaciTranslaci(Mat ffmatice, Mat calibrateCamera){
+	Mat E = calibrateCamera*ffmatice*calibrateCamera;
+	vector<Mat> rotTran;
+	
 
-	fs.release();
+	SVD svd(E, SVD::MODIFY_A);
+	Mat svd_u = svd.u;
+	Mat svd_vt = svd.vt;
+	Mat svd_w = svd.w;
+
+	Matx33d W(0, -1, 0,
+		1, 0, 0,
+		0, 0, 1);
+
+	Mat R1 = svd_u * Mat(W).t() * svd_vt; //or svd_u * Mat(W) * svd_vt; 
+	Mat t1 = svd_u.col(2); //or -svd_u.col(2)
+
+	Mat R2 = svd_u * Mat(W) * svd_vt; //or svd_u * Mat(W) * svd_vt; 
+	Mat t2 = -svd_u.col(2); //or -svd_u.col(2)
+
+
+
+	rotTran.push_back(R1);
+	rotTran.push_back(t1);
+	return rotTran;
 }
-*/
+
+vector<Point3f> body3DpomociRT(vector<Mat> rotTran, vector<vector<Point2f>> dvojiceBodu){
+	float pixel = 0.026;
+	Point3f bod3D;
+	vector<Point3f> body3D;
+	//------------------------------------------------------------------------------
+	for (int i = 0; i < dvojiceBodu[0].size(); i++){ //cyklus pres dvojice bodu
+		float yo = dvojiceBodu[1][i].y*pixel; // y`*pixel
+		Mat Y; //bod Y z prvniho borazu
+		Y.push_back(dvojiceBodu[0][i].x*pixel);// x*pixel
+		Y.push_back(dvojiceBodu[0][i].y*pixel);// y*pixel
+		Y.push_back(1.0);// z //doplnek
+		Mat citatelJmenovatel = (rotTran[0].col(1) - yo*rotTran[0].col(2)); //Rotace(druhy radek) - y` * /Rotace(treti radek) 
+		float a = citatelJmenovatel.dot(rotTran[1].t()); // citatel = citatelJmenovatel * Y
+		float b = citatelJmenovatel.dot(Y.t());
+		float hloubka = a / b; //vypocet z-ove souradnice bodu Y
+		bod3D.x = dvojiceBodu[0][i].x*pixel;
+		bod3D.y = dvojiceBodu[0][i].y*pixel;
+		bod3D.z = hloubka;
+		body3D.push_back(bod3D);
+	}
+	return body3D;
+}
 
 int main()
 {
@@ -236,24 +360,36 @@ int main()
 	vector<String> nazvyFotek;
 	nalezeniNazvuFotek(adresa, nazvyFotek);
 	vector<vector<DMatch>> all_matches;
+	string nazevSouboruXmlKal = "../soubory/xmlSoubory/kalibraceDataTest.xml";
+	vector<vector<Point3f>> objPoints;
+	vector<vector<Point2f>> imgPoints;
+	Size imageSize;
+	Mat cameraMatrix;
+	Mat distCoeffs;
+	vector<Mat> rvecs;
+	vector<Mat> tvecs;
+	vector<String> nazvySouboru;
+
 
 	for (int i = 0; i < nazvyFotek.size() - 1; i++){
 		// matches
 		vector<DMatch> good_matches = paroveKlicoveBody(nazvyFotek[i], nazvyFotek[i + 1], All_keypoints);
 		all_matches.push_back(good_matches);
 	}	
-
+	readXmlvector(nazevSouboruXmlKal, &objPoints, &imgPoints, &imageSize, &cameraMatrix, &distCoeffs, &rvecs, &tvecs, &nazvySouboru);
 	for (int i = 0; i < all_matches.size(); i++){
+		vector<vector<Point2f>> dvojiceBodu2D = parovaniDodu(all_matches[i], All_keypoints[i][0], All_keypoints[i][1]);
 		//find Fundamental Matatrix
-		Mat ffmatice = ffMatrix(all_matches[i], All_keypoints[i][0], All_keypoints[i][1]);
-		All_ffmatice.push_back(ffmatice);
-		cout << ffmatice << endl;
-		//saveData(good_matches, ffmatice, All_keypoints[i][0], All_keypoints[i][1], i);
-	}
+		Mat ffmatice = ffMatrix(dvojiceBodu2D);
+
+		// rozklad na rotaci a translaci
+		//vector<Mat> rotTran = rozkladFMnaRotaciTranslaci(ffmatice, calibrateCamera);
+		//vytvoreni 3D bodu
+		
+	
 	system("PAUSE");
 	return 0;
 }
 
 
-
-
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
