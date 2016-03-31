@@ -19,11 +19,12 @@
 using namespace std;
 using namespace cv;
 
-int nalezeniNazvuFotek(String adresa, vector<String> &nazvyFotek)
+int nalezeniNazvuFotek(String adresa, vector<String> &nazvyFotek, int maxPocet)
 {
 	String nazevSouboru;
 	Mat frame; // obrazek
 	int citac = 10; // citac pro vstupni soubory
+	
 	while (true) {
 		if (citac < 100){nazevSouboru = adresa + "image0" + to_string(citac) + ".jpg";}
 		else{nazevSouboru = adresa + "image" + to_string(citac) + ".jpg";}
@@ -33,11 +34,14 @@ int nalezeniNazvuFotek(String adresa, vector<String> &nazvyFotek)
 		frame = imread(nazevSouboru, CV_LOAD_IMAGE_GRAYSCALE); // nacteni fotky ve stupni sedi
 		if (frame.empty()) {
 			cout << "Nazev fotky neexistuje: " << nazevSouboru << endl;
-			system("PAUSE");
 			break;
 		}
 		cout << "existuje " << endl;
 		citac++;
+		if (maxPocet + 10 <= citac){
+			cout << "Omezeni maxPoctu fotek: " << maxPocet << endl;
+			break;
+		}
 
 		nazvyFotek.push_back(nazevSouboru);
 	}
@@ -188,16 +192,17 @@ vector<DMatch> paroveKlicoveBody(String fotkaL, String fotkaP, vector<vector<vec
 	//-------------------------------------------------------------
 	//-- Step 3: Matching descriptor vectors using FLANN matcher
 	vector<DMatch> good_matches = loweUpraveneSparovani(descriptorsL, descriptorsR);
-	//-------------------------------------------------------------
+	//-------------------------------------------------------------//vykresleni dvojice obr s parovanymi body
 	Mat img_matches;
 	drawMatches(img_1, keypoints[0], img_2, keypoints[1], good_matches, img_matches);
 	//-- Show detected matches
-	imshow("Matches", img_matches);
+	//imshow("Matches", img_matches);
 
 	waitKey(30);
 
 	return good_matches;
 }
+
 vector<vector<Point2f>> parovaniDodu(vector<DMatch> matches, vector<KeyPoint> keypoints1, vector<KeyPoint> keypoints2){
 	vector<cv::Point2f> points1, points2;
 	for (int i = 0; i < matches.size(); i++){
@@ -216,85 +221,16 @@ vector<vector<Point2f>> parovaniDodu(vector<DMatch> matches, vector<KeyPoint> ke
 	return dvojiceBodu;
 }
 
-
-
-bool readXmlvector(string nazevSouboruXmlKal, vector<vector<Point3f>> *objPoints, vector<vector<Point2f>> *imgPoints, Size *imageSize, Mat *cameraMatrix, Mat *distCoeffs, vector<Mat> *rvecs, vector<Mat> *tvecs, vector<String> *nazvySouboru)
+Mat readXmlCameraMatrix(string nazevSouboruXmlKal)
 {
-
-
-	int pocet;
-	Mat camera;
-	Size velikost;
-	Mat diCo;
-	String nazvySoubor;
-	vector<vector<Point2f>> imgPoint;
-	Mat objPoint;
-	Mat rvec;
-	Mat tvec;
-	vector<Mat> rvecss;
-	vector<Mat> tvecss;
-
-
-	cout << "oteviram..." << endl;
-
+	Mat  cameraMatrix;
 	FileStorage fr;
 	fr.open(nazevSouboruXmlKal, FileStorage::READ);
-
-	fr["pocet"] >> pocet;
-	fr["cameraMatrix"] >> camera;
-	fr["imageSize"] >> velikost;
-	fr["distCoeff"] >> diCo;
-	fr["objPoint"] >> objPoint;
-
-	//cout << "obj-konec: " << objPoint<< "\n";
-
-	///////////////////////////////obrazky start
-	FileNode pictures = fr["obrazky"];
-	FileNodeIterator it = pictures.begin(), it_end = pictures.end();
-	// iterate through a sequence using FileNodeIterator
-	for (int idx = 0; it != it_end; ++it, idx++)
-	{
-		//cout << "obrazek #" << idx << ": " << "\n";
-		//cout << (string)(*it)["nazvySouboru"];
-
-
-		//////////////////////////////imgpoint start
-		vector<Point2f> pointip_obr;
-		FileNode ip = (*it)["imgPoints"];
-		for (FileNodeIterator it_ip = ip.begin(); it_ip != ip.end(); ++it_ip)
-		{
-			Point2f pointip;
-			pointip.x = *it_ip;
-			++it_ip;
-			pointip.y = *it_ip;
-
-			pointip_obr.push_back(pointip);
-		}
-		//cout << "img point: "<< pointip_obr << "\n";
-		imgPoint.push_back(pointip_obr);
-
-		///////////////////////////////imgpoint end
-
-		(*it)["rvecs"] >> rvec;
-		rvecss.push_back(rvec);
-
-		(*it)["tvecs"] >> tvec;
-		tvecss.push_back(tvec);
-	}
-
+	fr["cameraMatrix"] >> cameraMatrix;
 	fr.release();
-
-
-	Mat R1;
-	Mat R2;
-	Mat P1;
-	Mat P2;
-	Mat Q;
-
-
-	return true;
+	cout << "nacteni kalibracni matice" << endl;
+	return  cameraMatrix;
 }
-
 
 Mat ffMatrix(vector<vector<Point2f>> dvojiceBodu2D){
 	Mat matrixFF = findFundamentalMat(Mat(dvojiceBodu2D[0]), Mat(dvojiceBodu2D[1]));
@@ -326,6 +262,7 @@ vector<Mat> rozkladFMnaRotaciTranslaci(Mat ffmatice, Mat calibrateCamera){
 
 	rotTran.push_back(R1);
 	rotTran.push_back(t1);
+	
 	return rotTran;
 }
 
@@ -358,35 +295,35 @@ int main()
 	vector<Mat> All_ffmatice;
 	String adresa = "../soubory/fotoKostka/";;
 	vector<String> nazvyFotek;
-	nalezeniNazvuFotek(adresa, nazvyFotek);
+	nalezeniNazvuFotek(adresa, nazvyFotek, 2);
 	vector<vector<DMatch>> all_matches;
-	string nazevSouboruXmlKal = "../soubory/xmlSoubory/kalibraceDataTest.xml";
-	vector<vector<Point3f>> objPoints;
-	vector<vector<Point2f>> imgPoints;
-	Size imageSize;
+	string nazevSouboruXmlKal = "../soubory/xmlSoubory/kalibraceData0317.xml";
 	Mat cameraMatrix;
-	Mat distCoeffs;
-	vector<Mat> rvecs;
-	vector<Mat> tvecs;
 	vector<String> nazvySouboru;
+	cameraMatrix = readXmlCameraMatrix(nazevSouboruXmlKal);
 
 
 	for (int i = 0; i < nazvyFotek.size() - 1; i++){
 		// matches
 		vector<DMatch> good_matches = paroveKlicoveBody(nazvyFotek[i], nazvyFotek[i + 1], All_keypoints);
 		all_matches.push_back(good_matches);
+		
 	}	
-	readXmlvector(nazevSouboruXmlKal, &objPoints, &imgPoints, &imageSize, &cameraMatrix, &distCoeffs, &rvecs, &tvecs, &nazvySouboru);
+	cout << "matchovani bodu dokonceno v poctu" << all_matches.size() << endl;
+
 	for (int i = 0; i < all_matches.size(); i++){
 		vector<vector<Point2f>> dvojiceBodu2D = parovaniDodu(all_matches[i], All_keypoints[i][0], All_keypoints[i][1]);
-		//find Fundamental Matatrix
-		Mat ffmatice = ffMatrix(dvojiceBodu2D);
+		cout << "vytvoreni dvojic 2D bodu" << endl;
+		Mat ffmatice = ffMatrix(dvojiceBodu2D);//find Fundamental Matatrix
+		cout << "vytvorena fundamentalni matice" << endl;
 
-		// rozklad na rotaci a translaci
-		//vector<Mat> rotTran = rozkladFMnaRotaciTranslaci(ffmatice, calibrateCamera);
-		//vytvoreni 3D bodu
 		
-	
+		// rozklad na rotaci a translaci
+		vector<Mat> rotTran = rozkladFMnaRotaciTranslaci(ffmatice, cameraMatrix);
+		cout << "vytvorena rotacni a translacni matice z fundamental matrix" << endl;
+		//vytvoreni 3D bodu
+
+	}
 	system("PAUSE");
 	return 0;
 }
