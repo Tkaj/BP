@@ -23,9 +23,9 @@ int nalezeniNazvuFotek(String adresa, vector<String> &nazvyFotek, int maxPocet)
 {
 	String nazevSouboru;
 	Mat frame; // obrazek
-	int pocatek = 21;
+	int pocatek = 20;
 		int citac = pocatek; // citac pro vstupni soubory
-	
+		
 	while (true) {
 		if (citac < 100){nazevSouboru = adresa + "image0" + to_string(citac) + ".jpg";}
 		else{nazevSouboru = adresa + "image" + to_string(citac) + ".jpg";}
@@ -222,15 +222,19 @@ vector<vector<Point2f>> parovaniDodu(vector<DMatch> matches, vector<KeyPoint> ke
 	return dvojiceBodu;
 }
 
-Mat readXmlCameraMatrix(string nazevSouboruXmlKal)
+vector<Mat> readXmlCameraMatrix(string nazevSouboruXmlKal)
 {
-	Mat  cameraMatrix;
+	Mat  cameraMatrix, distCoeff;
+	vector<Mat> calibrateDistor;
 	FileStorage fr;
 	fr.open(nazevSouboruXmlKal, FileStorage::READ);
 	fr["cameraMatrix"] >> cameraMatrix;
+	fr["distCoeff"] >> distCoeff;
 	fr.release();
 	cout << "nacteni kalibracni matice" << endl;
-	return  cameraMatrix;
+	calibrateDistor.push_back(cameraMatrix);
+	calibrateDistor.push_back(distCoeff);
+	return  calibrateDistor;
 }
 
 Mat ffMatrix(vector<vector<Point2f>> dvojiceBodu2D){
@@ -239,10 +243,37 @@ Mat ffMatrix(vector<vector<Point2f>> dvojiceBodu2D){
 	return matrixFF;
 }
 
+Mat overenifundMatice(Mat ffMatrix, vector<vector<Point2f>> dvojiceBodu){
+	Mat nula;
+	Mat all_nula;
+	Point3f prvni;
+	Point3f druhy;
+	float max = 0;
+	for (int a = 0; a < dvojiceBodu[0].size(); a++){
+		prvni.x = dvojiceBodu[0][a].x;
+		prvni.y = dvojiceBodu[0][a].y;
+		prvni.z = 1;
+		Mat prvnim = Mat(prvni);
+		prvnim.convertTo(prvnim, CV_64F);
+		druhy.x = dvojiceBodu[1][a].x;
+		druhy.y = dvojiceBodu[1][a].y;
+		druhy.z = 1;
+		Mat druhym = Mat(druhy);
+		druhym.convertTo(druhym, CV_64F);
+
+		nula = Mat(prvnim).t()*ffMatrix*Mat(druhym);
+		if (max < nula.at<float>(0, 0)){
+			max = nula.at<float>(0, 0);
+		}
+		all_nula.push_back(nula);
+
+	}
+	return all_nula;
+}
+
 vector<Mat> rozkladFMnaRotaciTranslaci(Mat ffmatice, Mat calibrateCamera){
 	Mat E = calibrateCamera*ffmatice*calibrateCamera;
 	vector<Mat> rotTran;
-
 
 	SVD svd(E, SVD::MODIFY_A);
 	Mat svd_u = svd.u;
@@ -258,25 +289,28 @@ vector<Mat> rozkladFMnaRotaciTranslaci(Mat ffmatice, Mat calibrateCamera){
 
 	Mat R2 = svd_u * Mat(W) * svd_vt; //or svd_u * Mat(W) * svd_vt; 
 	Mat t2 = -svd_u.col(2); //or -svd_u.col(2)
-	/*cout << R1<<endl;
+	cout << R1<<endl;
 	cout << R2 << endl;
 	cout << t1 << endl;
-	cout << t2<< endl;*/
+	cout << t2<< endl;
+	system("PAUSE");
 	
-	//rotTran.push_back(R1);
-	//rotTran.push_back(t1);
-
+	rotTran.push_back(R1);
 	rotTran.push_back(R2);
+	
 	rotTran.push_back(t1);
+	rotTran.push_back(t2);
 
 	return rotTran;
 }
 
-vector<Point3f> body3DpomociRT(vector<vector<Mat>> all_rotTran, vector<vector<Point2f>> dvojiceBodu,int indexDvojic){
+vector<Point3f> body3DpomociRT(vector<vector<Mat>> all_rotTran, vector<vector<Point2f>> dvojiceBodu, int indexDvojic){
 	vector<Mat> rotTran = all_rotTran[indexDvojic];
-	float pixel = 0.026;
+	float pixel =  0.026;
 	Point3f bod3D;
 	vector<Point3f> body3D;
+	Mat rot = rotTran[0];
+	Mat tran = rotTran[1];
 	//------------------------------------------------------------------------------
 	for (int i = 0; i < dvojiceBodu[0].size(); i++){ //cyklus pres dvojice bodu
 		float yo = dvojiceBodu[1][i].y*pixel; // y`*pixel
@@ -284,20 +318,22 @@ vector<Point3f> body3DpomociRT(vector<vector<Mat>> all_rotTran, vector<vector<Po
 		Y.x = dvojiceBodu[0][i].x*pixel;// x*pixel
 		Y.y = dvojiceBodu[0][i].y*pixel;// y*pixel
 		Y.z = 1.0;// z //doplnek
-		//----------------------vzorecek pro dopocet z-ove souzadnice (hloubka)
-		Mat Ymat = Mat(Y);
+		//---------------------
+		Mat Ymat = Mat(Y);//pretypovani
 		Ymat.convertTo(Ymat, CV_64F);
-		Mat citatelJmenovatel = (rotTran[0].col(1) - yo*rotTran[0].col(2)); //Rotace(druhy radek) - y` * /Rotace(treti radek) 
-		float a = citatelJmenovatel.dot(rotTran[1]); // citatel = citatelJmenovatel * Y
-		float b = citatelJmenovatel.dot(Ymat);
+		//------------------------------vzorecek pro dopocet z-ove souradnice (hloubka)
+		Mat cinitel = (rot.row(1) - yo*rot.row(2)).t(); //Rotace(druhy radek) - y` * /Rotace(treti radek) 
+		float a = cinitel.dot(tran); // citatel = citatelJmenovatel * Y
+		float b = cinitel.dot(Ymat);
 		float hloubka = a / b; //vypocet z-ove souradnice bodu Y
-		Y.z = hloubka;
+		Y=Y*hloubka;
 		//prevedeni do prvni jednotne soustavy souradnic// plati pouze pro dvojice s indexem 1 a vis
 		/*if (indexDvojic > 0){
 			Mat Yv = Mat(Y);
+			Yv.convertTo(Yv, CV_64F);
 			for (int c = 0; c < indexDvojic; c++){
-				Yv = all_rotTran[c][0] + Yv;//translace + 3D bod
-				Yv = all_rotTran[c][1] * Yv;//rotace * 3D bod
+				Yv = Yv - all_rotTran[c][1];//translace + 3D bod
+				Yv = all_rotTran[c][0].inv() * Yv;//rotace * 3D bod
 			}	
 			Y = Point3f(Yv);
 		}*/
@@ -310,11 +346,41 @@ vector<Mat> vypocetProjekcnichMatic(vector<Mat> rotTran, Mat calibrateCamera){
 	Mat P1 = Mat::eye(3, 4, CV_64F);
 	P1 = calibrateCamera*P1;
 		
-	Mat P2 = Mat::eye(3, 3, CV_64F);
+	Mat P2;
+	//= Mat::eye(3, 4, CV_64F);
 	
-	hconcat(P2, -rotTran[1], P2);
+	hconcat(rotTran[0], -rotTran[1] * rotTran[0], P2);
 	P2 = rotTran[0] * calibrateCamera*P2;
 	vector<Mat> P1P2;
+	P1P2.push_back(P1);
+	P1P2.push_back(P2);
+	return P1P2;
+}
+
+void save3Dbody(vector<vector<Point3f>> body){
+	
+	FileStorage fr;
+	fr.open("body3D_RT.xml", FileStorage::WRITE);
+	for (int m = 0; m < body.size(); m++)
+	{
+		fr << "A_"<<"[";
+		for (int n = 0; n < body[m].size(); n++)
+		{
+			fr << body[m][n].x << " ," << body[m][n].y << "," << body[m][n].z << ";";
+		}
+
+		fr << "]";
+	}
+	
+	fr.release();	
+}
+
+vector<Mat> vypocetP1P2matic(Mat cameraMatrix, Mat distCoeff, vector<Mat> rotTran){
+	Size imageSize = Size(5184, 3456);
+	Mat R1, R2, P1, P2, Q;
+	vector<Mat> P1P2;
+	cout << distCoeff << endl;
+	stereoRectify(cameraMatrix, distCoeff, cameraMatrix, distCoeff, imageSize, rotTran[0].inv(), -rotTran[1], R1, R2, P1, P2, Q);
 	P1P2.push_back(P1);
 	P1P2.push_back(P2);
 	return P1P2;
@@ -324,19 +390,21 @@ int main()
 {
 	vector<vector<vector<KeyPoint>>> All_keypoints;
 	vector<Mat> All_ffmatice;
-	String adresa = "../soubory/";
+	String adresa = "../soubory/fotoKostka/";
 	//String adresa = "../soubory/fotoKostka/";
 	vector<String> nazvyFotek;
-	int maxPocetFotek = 3;
+	int maxPocetFotek = 2;
 	nalezeniNazvuFotek(adresa, nazvyFotek, maxPocetFotek);
 	vector<vector<DMatch>> all_matches;
 	vector<vector<Mat>> all_rotTran;
 	vector<vector<Point3f>> all_body3D;
 	string nazevSouboruXmlKal = "../soubory/xmlSoubory/kalibraceData0317.xml";
 	Mat cameraMatrix;
+	Mat distCoeff;
 	vector<String> nazvySouboru;
-	cameraMatrix = readXmlCameraMatrix(nazevSouboruXmlKal);
-
+	vector<Mat> calibrateDistor = readXmlCameraMatrix(nazevSouboruXmlKal);
+	cameraMatrix = calibrateDistor[0];
+	distCoeff = calibrateDistor[1];
 	
 	cout << "pocet nazvu forek" << nazvyFotek.size() << endl;
 
@@ -351,19 +419,50 @@ int main()
 
 	for (int i = 0; i < pocetParufotek; i++){
 		vector<vector<Point2f>> dvojiceBodu2D = parovaniDodu(all_matches[i], All_keypoints[i][0], All_keypoints[i][1]);
-		cout <<i<< ": vytvoreni dvojic 2D bodu" << endl;
+		
+		cout << i << ": vytvoreni dvojic 2D bodu" << endl;
 		Mat ffmatice = ffMatrix(dvojiceBodu2D);//find Fundamental Matatrix
-		cout << i << ": vytvorena fundamentalni matice" << endl;
+		//Mat overovaciKonstanta = overenifundMatice(ffmatice, dvojiceBodu2D); //bod1.T*F*bod2 = 0
 
-		
-		
-		vector<Mat> rotTran = rozkladFMnaRotaciTranslaci(ffmatice, cameraMatrix); // rozklad na rotaci a translaci
+		cout << i << ": vytvorena fundamentalni matice s chybou:" << endl;
+		vector<Mat> rot12Tran12 = rozkladFMnaRotaciTranslaci(ffmatice, cameraMatrix); // rozklad na rotaci a translaci
+		vector<Mat> rotTran;
+		rotTran.push_back(rot12Tran12[1]);
+		rotTran.push_back(rot12Tran12[3]);
 		all_rotTran.push_back(rotTran);
+
 		cout << i << ": vytvorena rotacni a translacni matice z fundamental matrix" << endl;
 		vector<Point3f> body3D = body3DpomociRT(all_rotTran, dvojiceBodu2D, i);//vytvoreni 3D bodu
 		all_body3D.push_back(body3D);
 		cout << i << ": vytvoreny 3D body" << endl;
 
+		for (int k = 0; k < body3D.size(); k++){
+			cout << body3D[k] << endl;
+
+		}
+		
+		//cout << dvojiceBodu2D[0].size() << " to" << dvojiceBodu2D[1].size() << " to " << body3D.size() << endl;
+			
+	
+		/*
+		vector<Mat> P1P2 = vypocetP1P2matic(cameraMatrix, distCoeff, rotTran);
+		Mat body4D;
+		triangulatePoints(P1P2[0], P1P2[1], dvojiceBodu2D[0], dvojiceBodu2D[1], body4D);//triangulace bodu
+		int pocetBod4D = body4D.cols;
+		body4D = body4D.t();
+		vector<Point3f> body3Dz4D;
+
+		for (int k = 0; k < pocetBod4D; k++){
+		float delitel = body4D.at<float>(k, 3);
+		Point3f bod3Dz4D;
+		bod3Dz4D.x = body4D.at<float>(k, 0) / delitel;
+		bod3Dz4D.y = body4D.at<float>(k, 1) / delitel;
+		bod3Dz4D.z = body4D.at<float>(k, 2) / delitel;
+		body3Dz4D.push_back(bod3Dz4D);
+		}
+		all_body3D.push_back(body3Dz4D);
+		
+		*/
 		
 		/*
 		vector<Mat> P1P2 = vypocetProjekcnichMatic(all_rotTran[i], cameraMatrix);//tvorba projekcnich matice
@@ -387,10 +486,8 @@ int main()
 		cout << i << ": vypocet 4D bodu pomoci projekcnich matic" << endl;
 	*/
 	}
-	for (int k = 0; k < nazvyFotek.size() - 1; k++){
-		cout << all_body3D[k] << endl;
-		cout << "mezera"<< endl;
-	}
+	save3Dbody(all_body3D);
+	
 	system("PAUSE");
 	return 0;
 }
