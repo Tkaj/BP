@@ -15,40 +15,42 @@
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/calib3d/calib3d.hpp"
 #include "opencv2/nonfree/nonfree.hpp"
-
-
+#include <dirent.h>
 
 using namespace std;
 using namespace cv;
 
-int nalezeniNazvuFotek(String adresa, vector<String> &nazvyFotek, int maxPocet)
-{
-	String nazevSouboru;
-	Mat frame; // obrazek
-	int pocatek = 20;
-		int citac = pocatek; // citac pro vstupni soubory
-		
-	while (true) {
-		if (citac < 100){nazevSouboru = adresa + "image0" + to_string(citac) + ".jpg";}
-		else{nazevSouboru = adresa + "image" + to_string(citac) + ".jpg";}
-		
-		cout << "Nacitam soubor se jmenem: " << nazevSouboru << endl;
-		waitKey(30);
-		frame = imread(nazevSouboru, CV_LOAD_IMAGE_GRAYSCALE); // nacteni fotky ve stupni sedi
-		if (frame.empty()) {
-			cout << "Nazev fotky neexistuje: " << nazevSouboru << endl;
-			break;
-		}
-		cout << "existuje " << endl;
-		citac++;
-		nazvyFotek.push_back(nazevSouboru);
+int nalezNazVsechFot(char* adresa, vector<String> &nazvyFotek,int max){
+	DIR *dir;
+	struct dirent *ent;
+	if ((dir = opendir(adresa)) != NULL) {
+		/* print all the files and directories within directory */
+		while ((ent = readdir(dir)) != NULL) {
+			
+			
+			String filename = ent->d_name;
+			cout << filename << endl;
+			if ((filename.find(".JPG") != string::npos) || (filename.find(".jpg") != string::npos)){
+				nazvyFotek.push_back(adresa + filename);
 
-		if (maxPocet + pocatek <= citac){
-			cout << "Omezeni maxPoctu fotek: " << maxPocet << endl;
-			break;
+				if (max <= nazvyFotek.size()){ return 0; }
+			}
 		}
+		closedir(dir);
 	}
+	else {
+		/* could not open directory */
+		perror("");
+		cout << "nenalezen adresaz" << endl;
+		return 1;
+	}
+
+	if (nazvyFotek.size() == 0){ //pokud je pole NazvuFotek prazdne opust fukci
+		return 1;
+	}
+
 	return 0;
+
 }
 
 int nalezeniVyzBodSurf(Mat obrazek, vector<vector<KeyPoint>> &klice)
@@ -206,7 +208,7 @@ vector<DMatch> paroveKlicoveBody(String fotkaL, String fotkaP, vector<vector<vec
 	return good_matches;
 }
 
-vector<vector<Point2d>> parovaniDodu(vector<DMatch> matches, vector<KeyPoint> keypoints1, vector<KeyPoint> keypoints2){
+vector<vector<Point2d>> parovaniDodu(vector<DMatch> matches, vector<KeyPoint> keypoints1, vector<KeyPoint> keypoints2){ //dvojice klicovych bodu to dvojice souradniv bodu 
 	vector<cv::Point2d> points1, points2;
 	for (int i = 0; i <matches.size(); i++)
 	{
@@ -221,7 +223,7 @@ vector<vector<Point2d>> parovaniDodu(vector<DMatch> matches, vector<KeyPoint> ke
 	dvojiceBodu.push_back(points2);
 
 	return dvojiceBodu;
-}
+} //
 
 vector<Mat> readXmlCameraMatrix(string nazevSouboruXmlKal)
 {
@@ -266,12 +268,7 @@ Mat overenifundMatice(Mat ffMatrix, vector<vector<Point2d>> dvojiceBodu){
 	return all_nula;
 }
 
-Mat_<double> LinearLSTriangulation(
-	Point3d u,//homogenous image point (u,v,1)
-	Matx34d P,//camera 1 matrix
-	Point3d u1,//homogenous image point in 2nd camera
-	Matx34d P1//camera 2 matrix
-	)
+Mat_<double> LinearLSTriangulation(Point3d u, Matx34d P, Point3d u1, Matx34d P1)
 {
 	//build A matrix
 	Matx43d A(u.x*P(2, 0) - P(0, 0), u.x*P(2, 1) - P(0, 1), u.x*P(2, 2) - P(0, 2),
@@ -291,127 +288,78 @@ Mat_<double> LinearLSTriangulation(
 	//Point3d(X(0), X(1), X(2)) by mel byt 3D bod
 }
 
+vector<vector<Point3d>> rozsizeniaPrenasobeniInvK(vector<vector<Point2d>> dvojiceBodu2D, Mat cameraMatrix){
+	vector<vector<Point3d>> dvojiceBodu2DReal;
+	for (int j = 0; j < dvojiceBodu2D[0].size(); j++){
+		Point2d kp1 = dvojiceBodu2D[0][j];
+		Point3d u1(kp1.x, kp1.y, 1.0);
+		Mat_<double> um1 = cameraMatrix.inv() *Mat_<double>(u1);
+		u1 = um1.at<Point3d>(0);
+
+		Point2d kp2 = dvojiceBodu2D[1][j];
+		Point3d u2(kp2.x, kp2.y, 1.0);
+		Mat_<double> um2 = cameraMatrix.inv() *Mat_<double>(u1);
+		u1 = um2.at<Point3d>(0);
+
+		vector<Point3d> dvojiceB;
+		dvojiceB.push_back(u1);
+		dvojiceB.push_back(u2);
+
+		dvojiceBodu2DReal.push_back(dvojiceB);
+	}
+	return dvojiceBodu2DReal;
+}
+
 vector<Mat_<double>> rozkladFMnaRotaciTranslaci(Mat F, Mat K){
-	//Mat E = K.t()*F*K;
-
-	Matx33d F_(0, -2, 1000,
-		2, 0, -500,
-		-1000, 500, 0);
-
-	Matx33d K_(500, 0, 250,
-		0, 500, 250,
-		0, 0, 1);
-
-	Mat E = Mat(K_).t()*Mat(F_)*Mat(K_);
-	/*
-	Mat M = Mat::zeros(4, 5, CV_64F);
-	M.col(0).row(0) = 1;
-	M.col(4).row(0) = 2;
-	M.col(2).row(1) = 3;
-	M.col(1).row(3) = 2;
-	cout << "M " << M << endl;
-	system("PAUSE");
-	*/
+	Mat E = K.t()*F*K;
+	
 	SVD svd(E, SVD::FULL_UV);
 	Mat svd_u = svd.u;
 	Mat svd_vt = svd.vt;
 	Mat svd_w = svd.w;
-	cout << "u " << svd_u << endl;
-	cout << "vt " << svd_vt << endl;
-	cout << "w " << svd_w << endl;
-	/*
-	Mat WWW = Mat::zeros(4, 5, CV_64F);
-	WWW.col(0).row(0) = svd_w.at<double>(0, 0);
-	WWW.col(1).row(1) = svd_w.at<double>(1, 0);
-	WWW.col(2).row(2) = svd_w.at<double>(2, 0);
-	WWW.col(3).row(3) = svd_w.at<double>(3, 0);
+		
+	Matx33d Sigma(1, 0, 0,
+				  0, 1, 0,
+		          0, 0, 0);
 
-	Mat pinvA = svd_u*WWW*svd_vt;
-	cout << "M " << pinvA << endl;
+	Mat Eskut = Mat(svd_u)*Mat(Sigma)*Mat(svd_vt);
+	cout << "E:  " << E << endl;
+	cout << "Es:  " << Eskut << endl;
+	//Mat T = Eskut*H.inv();
+	//cout << "T:  " << T << endl;
 
-	system("PAUSE");
-	*/
-	//Mat testE= svd_u*svd_w*svd_vt;
-	// cout << "test esencialni matice: " << testE << endl;
 	Matx33d W(0, -1, 0,
 		1, 0, 0,
 		0, 0, 1);
-	Matx31d T_(0, 1, 2);
 	Mat_<double> R1 = svd.u * Mat(W) * svd.vt;
-	Mat_<double> t1 = svd.u.col(2);
-	Mat_<double> R2 = svd.u * Mat(W).t() * svd.vt;
-
-
-
-	double pom = t1.at<double>(0, 0);
-	t1(0, 0) = t1(1, 0);
-	t1(1, 0) = t1(2, 0);
-	t1(2, 0) = pom;
-
-	t1(0, 0) = 0.4472;
-	t1(1, 0) = 0.8944;
-	t1(2, 0) = 0.0018;
-	cout << "t1: " << t1 << endl;
-
-	Matx33d tas(0, -t1(2), t1(1), // antisimetricka t2
-		t1(2), 0, -t1(0),
-		-t1(1), t1(0), 0);
-
-	cout << "tas: " << tas << endl;
-
-	Mat_<double> tasTF = Mat(tas).t()*Mat(F_);
-	cout << "tasTF " << tasTF << endl;
-	Matx34d P2p(tasTF(0, 0), tasTF(0, 1), tasTF(0, 2), t1(0, 0),
-			tasTF(1, 0), tasTF(1, 1), tasTF(1, 2), t1(1, 0),
-			tasTF(2, 0), tasTF(2, 1), tasTF(2, 2), t1(2, 0));
-	cout << "P2p " << P2p << endl;
-
-	Matx34d P2a(1, 0, 0, 500,
-		0, 1, 0, 1000,
-		0, 0, 1, 2);
-
+	Mat_<double> tscarkou = svd.u.col(2);
+	Mat_<double> R2 = svd.u * Mat(W).t() * svd.vt;		
+	/* tas(0,	-t1(2, 0), t1(1, 0),
+				t1(2, 0), 0, -t1(0, 0),
+				-t1(1, 0), t1(0, 0), 0);
+	Mat tasF = Mat(tas)*F.t();
 	
-	Mat K_T_ = Mat(K_)*Mat(T_);
-	double normaKT = norm(K_T_);  // ||KT||
-	cout << "normaKT " << normaKT << endl;
-	double normaKT2inv = 1 /(normaKT*normaKT);
-	cout << "1/normaKT^2 " << normaKT2inv << endl;
-	Mat_<double> t1NormaKT = -1*Mat(t1.t()) / normaKT;
-	cout << "-t1.t()/normaKT" << t1NormaKT << endl;
-	Matx44d Hpinv(1, 0, 0, 0, //testovaci Homogeni matice
+	Matx34d Pi2p(tasF.at<double>(0, 0), tasF.at<double>(0, 1), tasF.at<double>(0, 2), t1(0, 0),
+				 tasF.at<double>(1, 0), tasF.at<double>(1, 1), tasF.at<double>(1, 2), t1(1, 0),
+				 tasF.at<double>(2, 0), tasF.at<double>(2, 1), tasF.at<double>(2, 2), t1(2, 0));
+	cout << "Pi2p" << Mat(Pi2p).size() << endl;
+	cout << "H2" << H2.size() << endl;
+	cout << "H2" << H2 << endl;
+
+	Mat P2 = Mat(Pi2p)*H2;
+	Matx34d P1(1, 0, 0, 0,
 			   0, 1, 0, 0,
-			   0, 0, 1, 0,
-			   t1NormaKT(0, 0), t1NormaKT(0, 1), t1NormaKT(0, 2), normaKT2inv);
-
-	cout << "HomografiMatrix  " << Mat(Hpinv) << endl;
-	Mat P2p_vyp = Mat(P2a)*Mat(Hpinv);
-	cout << "P2p_vyp " << P2p_vyp << endl;
-	Mat P2a_vyp = Mat(P2p)*(Mat(Hpinv).inv);
-
-	cout << "P2a_vyp " << P2a_vyp << endl;
-
-	
-	Matx31d vlastC;
-	eigen(Mat(F_).t()*Mat(tas), vlastC); //vypocet vlastnich cisel F.t()*tas
-	cout << "vlastC: " << vlastC << endl;
-
-	Mat T1 = Mat(K_).inv()*t1*vlastC(0, 0); // vypocet spravne velikosti translace
-	Mat T2 = Mat(K_).inv()*t1*vlastC(1, 0); // vypocet spravne velikosti translace
-	Mat T3 = Mat(K_).inv()*t1*vlastC(2, 0); // vypocet spravne velikosti translace
-	cout <<"R1 "<< R1 << endl;
-	cout << "R2 " << R2 << endl;
-	cout << "t1 " << t1 << endl;
-	cout << "T1 " << T1 << endl;
-	cout << "T2 " << T2 << endl;
-	cout << "T3 " << T3 << endl;
-	system("PAUSE");
+			   0, 0, 1, 0);
+	vector<Mat> P1P2;
+	P1P2.push_back(Mat(P1));
+	P1P2.push_back(Mat(P2));
+	system("PAUSE");*/
 	vector<Mat_<double>> rotTran;
 	rotTran.push_back(R1);
 	rotTran.push_back(R2);
+	rotTran.push_back(tscarkou);
+	rotTran.push_back(-tscarkou);
 	
-	rotTran.push_back(T1);
-	rotTran.push_back(-T1);
-
 	return rotTran;
 }
 
@@ -447,15 +395,14 @@ vector<Point3d> body3DpomociRT(Mat rot, Mat tran, vector<vector<Point2d>> dvojic
 	return body3D;
 }
 
-void vypocetProjekcnichMatic(Mat_<double>  R, Mat_<double>  t, Mat K, Mat &P1, Mat &P2){
-	Matx34d Pk1(1.0, 0.0, 0.0, 0.0,
+void vypocetProjekcnichMatic(Mat_<double>  R, Mat_<double>  t, Matx34d &P1, Matx34d &P2){
+	Matx34d P1(1.0, 0.0, 0.0, 0.0,
 		       0.0, 1.0, 0.0, 0.0,
 			   0.0, 0.0, 1.0, 0.0);
-	Matx34d Pk2(R(0, 0), R(0, 1), R(0, 2), t(0),
+	Matx34d P2(R(0, 0), R(0, 1), R(0, 2), t(0),
 			   R(1, 0), R(1, 1), R(1, 2), t(1),
 			   R(2, 0), R(2, 1), R(2, 2), t(2));
-	P1 = K*Mat(Pk1);
-	P2 = K*Mat(Pk2);
+	
 }
 
 void save3Dbody(vector<Point3d> body, String jmeno){
@@ -476,80 +423,65 @@ void save3Dbody(vector<Point3d> body, String jmeno){
  
 int main()
 {
+	
 	vector<vector<vector<KeyPoint>>> All_keypoints;
 	vector<Mat> All_ffmatice;
-	String adresa = "../soubory/fotoKostka/";
-	
+	char* adresaChar = "../soubory/fotoKostka/";
 	vector<String> nazvyFotek;
 	int maxPocetFotek = 2;
-	nalezeniNazvuFotek(adresa, nazvyFotek, maxPocetFotek);
+
+	if (nalezNazVsechFot(adresaChar, nazvyFotek, maxPocetFotek) != 1){
+		cout << "nalezeni " << nazvyFotek.size() << " fotek" << endl;
+	}
+	else{
+		cout << "zadna fotka v adresari nebyla nenalezena" << endl;
+		system("PAUSE");
+		return 5;
+	}
 	vector<vector<DMatch>> all_matches;
 	vector<vector<Mat>> all_rotTran;
 	vector<vector<Point3f>> all_body3D;
 	string nazevSouboruXmlKal = "../soubory/xmlSoubory/kalibraceData0317.xml";
 	Mat cameraMatrix;
-	Mat distCoeff;
+	Mat distCoeffs;
 	vector<String> nazvySouboru;
 	vector<Mat> calibrateDistor = readXmlCameraMatrix(nazevSouboruXmlKal);
 	cameraMatrix = calibrateDistor[0];
-	distCoeff = calibrateDistor[1];
-	
+	distCoeffs = calibrateDistor[1];
+	//------------------------------------------------------------------------------------------------
 	cout << "pocet nazvu forek" << nazvyFotek.size() << endl;
-
 	for (int i = 0; i < nazvyFotek.size() - 1; i++)
 	{
 		// matches
 		vector<DMatch> good_matches = paroveKlicoveBody(nazvyFotek[i], nazvyFotek[i + 1], All_keypoints);
 		all_matches.push_back(good_matches);
-		
-	}	
-	
+	}
+	//------------------------------------------------------------------------------------------------
 	int pocetParufotek = all_matches.size();
 	cout << "matchovani bodu dokonceno v poctu" << pocetParufotek << endl;
 	 
 	for (int i = 0; i < pocetParufotek; i++)
 	{
-		cout << i << "kalibracni matice: " <<endl << cameraMatrix << endl;
+		cout << i << "kalibracni matice: " << endl << cameraMatrix << endl;
 		vector<vector<Point2d>> dvojiceBodu2D = parovaniDodu(all_matches[i], All_keypoints[i][0], All_keypoints[i][1]);
 		cout << i << ": vytvoreni dvojic 2D bodu" << endl;
 		vector<uchar> status;
 		Mat F = findFundamentalMat(dvojiceBodu2D[0], dvojiceBodu2D[1], FM_RANSAC, 0.1, 0.99, status);//fundamentalni matice
-		/*Mat H1, H2;
-		Size imageSize = Size(5184, 3456);
-		stereoRectifyUncalibrated(dvojiceBodu2D[0], dvojiceBodu2D[1], F, imageSize, H1, H2);*/
-		cout << i << ": fundamentalni matice" << F << endl;
-		
+
+		vector<vector<Point3d>> dvojiceBodu2DReal = rozsizeniaPrenasobeniInvK(dvojiceBodu2D, cameraMatrix);
 		vector<Mat_<double>> rot12Tran12 = rozkladFMnaRotaciTranslaci(Mat(F), Mat(cameraMatrix));
-		cout << i << ": rot12Tran34" << endl;
-	
-		vector<vector<Point3d>> dvojiceBodu3D;
+
+		Matx34d P1, P2;
+		vypocetProjekcnichMatic(rot12Tran12[1], rot12Tran12[2],P1, P2);//tvorba projekcnich matice P1 P2
 		
-		vector<Point3d> body3D = body3DpomociRT(rot12Tran12[1], -rot12Tran12[2], dvojiceBodu2D, cameraMatrix);//vytvoreni 3D bodu kalibrovanych////////
-		
-		String jmeno = to_string(1) + "_" + to_string(2) + "000"; //jmeno xml
-		save3Dbody(body3D, jmeno); //ukladani xml
-		
-		
-		Mat P1, P2;
-		vypocetProjekcnichMatic(rot12Tran12[1], rot12Tran12[2], cameraMatrix, P1, P2);//tvorba projekcnich matice P1 P2
-		Mat body4D;
-		triangulatePoints(P1, P2, dvojiceBodu2D[0], dvojiceBodu2D[1], body4D);//triangulace bodu
-		
-		int pocetBod4D = body4D.cols;
-		body4D = body4D.t();
-		vector<Point3d> body3Dz4D;
-		for (int k = 0; k < pocetBod4D; k++)
-		{
-			float delitel = body4D.at<double>(k, 3);
-			Point3f bod3Dz4D;
-			bod3Dz4D.x = body4D.at<double>(k, 0) / delitel;
-			bod3Dz4D.y = body4D.at<double>(k, 1) / delitel;
-			bod3Dz4D.z = body4D.at<double>(k, 2) / delitel;
-			body3Dz4D.push_back(bod3Dz4D);
+		vector<Point3d> body3D;
+		for (int k = 0; k < dvojiceBodu2DReal[0].size(); k++){
+			Mat_<double> X = LinearLSTriangulation(dvojiceBodu2DReal[0][k], P1, dvojiceBodu2DReal[0][k], P2);
+			body3D.push_back(Point3d(X(0), X(1), X(2)));
 		}
-		jmeno = to_string(2) + "_" + to_string(1)+"_4D";
-		save3Dbody(body3Dz4D, jmeno);
-		
+
+		String jmeno = to_string(2) + "_" + to_string(1) + "_Pk12";
+		save3Dbody(body3D, jmeno);	
 	
 	}
 	system("PAUSE");
