@@ -20,7 +20,7 @@
 using namespace std;
 using namespace cv;
 
-int nalezNazVsechFot(char* adresa, vector<String> &nazvyFotek,int max){
+int nalezNazVsechFot(char* adresa, vector<String> &nazvyFotek,int max) {
 	DIR *dir;
 	struct dirent *ent;
 	if ((dir = opendir(adresa)) != NULL) {
@@ -29,7 +29,6 @@ int nalezNazVsechFot(char* adresa, vector<String> &nazvyFotek,int max){
 			
 			
 			String filename = ent->d_name;
-			cout << filename << endl;
 			if ((filename.find(".JPG") != string::npos) || (filename.find(".jpg") != string::npos)){
 				nazvyFotek.push_back(adresa + filename);
 
@@ -208,7 +207,7 @@ vector<DMatch> paroveKlicoveBody(String fotkaL, String fotkaP, vector<vector<vec
 	return good_matches;
 }
 
-vector<vector<Point2d>> parovaniDodu(vector<DMatch> matches, vector<KeyPoint> keypoints1, vector<KeyPoint> keypoints2){ //dvojice klicovych bodu to dvojice souradniv bodu 
+vector<vector<Point2d>> parovaniBodu(vector<DMatch> matches, vector<KeyPoint> keypoints1, vector<KeyPoint> keypoints2){ //dvojice klicovych bodu to dvojice souradniv bodu 
 	vector<cv::Point2d> points1, points2;
 	for (int i = 0; i <matches.size(); i++)
 	{
@@ -224,20 +223,27 @@ vector<vector<Point2d>> parovaniDodu(vector<DMatch> matches, vector<KeyPoint> ke
 
 	return dvojiceBodu;
 } //
+//prevradi Y souradnici tak aby smerovala nahoru
+void prevraceniYsouradnice(vector<Point2d>& body,Size sizeImage){
+	for (int j = 0; j < body.size(); j++){
+		body[j].y = sizeImage.height - body[j].y;
+	}
+}
 
-vector<Mat> readXmlCameraMatrix(string nazevSouboruXmlKal)
+void readXmlCameraMatrix(string nazevSouboruXmlKal, Mat& cameraMatrix, Mat& distCoeff, Size& imageSize)
 {
-	Mat  cameraMatrix, distCoeff;
-	vector<Mat> calibrateDistor;
+
+	Mat cam, dis;
+	Size imSi;
 	FileStorage fr;
 	fr.open(nazevSouboruXmlKal, FileStorage::READ);
-	fr["cameraMatrix"] >> cameraMatrix;
-	fr["distCoeff"] >> distCoeff;
+	fr["cameraMatrix"] >> cam;
+	fr["imageSize"] >> imSi;
+	fr["distCoeff"] >> dis;
 	fr.release();
-	cout << "nacteni kalibracni matice" << endl;
-	calibrateDistor.push_back(cameraMatrix);
-	calibrateDistor.push_back(distCoeff);
-	return  calibrateDistor;
+	cameraMatrix = cam;
+	distCoeff = dis;
+	imageSize = imSi;
 }
 
 Mat overenifundMatice(Mat ffMatrix, vector<vector<Point2d>> dvojiceBodu){
@@ -288,79 +294,38 @@ Mat_<double> LinearLSTriangulation(Point3d u, Matx34d P, Point3d u1, Matx34d P1)
 	//Point3d(X(0), X(1), X(2)) by mel byt 3D bod
 }
 
-vector<vector<Point3d>> rozsizeniaPrenasobeniInvK(vector<vector<Point2d>> dvojiceBodu2D, Mat cameraMatrix){
-	vector<vector<Point3d>> dvojiceBodu2DReal;
-	for (int j = 0; j < dvojiceBodu2D[0].size(); j++){
-		Point2d kp1 = dvojiceBodu2D[0][j];
-		Point3d u1(kp1.x, kp1.y, 1.0);
-		Mat_<double> um1 = cameraMatrix.inv() *Mat_<double>(u1);
-		u1 = um1.at<Point3d>(0);
-
-		Point2d kp2 = dvojiceBodu2D[1][j];
-		Point3d u2(kp2.x, kp2.y, 1.0);
-		Mat_<double> um2 = cameraMatrix.inv() *Mat_<double>(u1);
-		u1 = um2.at<Point3d>(0);
-
-		vector<Point3d> dvojiceB;
-		dvojiceB.push_back(u1);
-		dvojiceB.push_back(u2);
-
-		dvojiceBodu2DReal.push_back(dvojiceB);
+void rozsizeniaPrenasobeniInvK(vector<Point2d> x, Mat cameraMatrix, vector<Point3d>& xK){
+	
+	for (int j = 0; j < x.size(); j++){
+		Point2d kp1 = x[j];
+		Point3d u(kp1.x, kp1.y, 1.0);
+		Mat_<double> um = cameraMatrix.inv() *Mat_<double>(u);
+		u = Point3d(um.at<double>(0, 0), um.at<double>(1, 0), um.at<double>(2, 0));
+		xK.push_back(u);
 	}
-	return dvojiceBodu2DReal;
 }
 
-vector<Mat_<double>> rozkladFMnaRotaciTranslaci(Mat F, Mat K){
+void rozkladFMnaRotaciTranslaci(Mat F, Mat K, Mat_<double>& R1, Mat_<double>& R2, Mat_<double>& t){
 	Mat E = K.t()*F*K;
-	
+
 	SVD svd(E, SVD::FULL_UV);
 	Mat svd_u = svd.u;
 	Mat svd_vt = svd.vt;
 	Mat svd_w = svd.w;
-		
+
 	Matx33d Sigma(1, 0, 0,
-				  0, 1, 0,
-		          0, 0, 0);
-
-	Mat Eskut = Mat(svd_u)*Mat(Sigma)*Mat(svd_vt);
-	cout << "E:  " << E << endl;
-	cout << "Es:  " << Eskut << endl;
-	//Mat T = Eskut*H.inv();
-	//cout << "T:  " << T << endl;
-
+		0, 1, 0,
+		0, 0, 0);
 	Matx33d W(0, -1, 0,
 		1, 0, 0,
 		0, 0, 1);
-	Mat_<double> R1 = svd.u * Mat(W) * svd.vt;
-	Mat_<double> tscarkou = svd.u.col(2);
-	Mat_<double> R2 = svd.u * Mat(W).t() * svd.vt;		
-	/* tas(0,	-t1(2, 0), t1(1, 0),
-				t1(2, 0), 0, -t1(0, 0),
-				-t1(1, 0), t1(0, 0), 0);
-	Mat tasF = Mat(tas)*F.t();
-	
-	Matx34d Pi2p(tasF.at<double>(0, 0), tasF.at<double>(0, 1), tasF.at<double>(0, 2), t1(0, 0),
-				 tasF.at<double>(1, 0), tasF.at<double>(1, 1), tasF.at<double>(1, 2), t1(1, 0),
-				 tasF.at<double>(2, 0), tasF.at<double>(2, 1), tasF.at<double>(2, 2), t1(2, 0));
-	cout << "Pi2p" << Mat(Pi2p).size() << endl;
-	cout << "H2" << H2.size() << endl;
-	cout << "H2" << H2 << endl;
+	R1 = svd.u * Mat(W) * svd.vt;
+	t = svd.u.col(2);
+	R2 = svd.u * Mat(W).t() * svd.vt;
+	//t(0, 0) = t(1, 0);
+	//t(1, 0) = t(2, 0);
+	//t(2, 0) = t(0, 0);
 
-	Mat P2 = Mat(Pi2p)*H2;
-	Matx34d P1(1, 0, 0, 0,
-			   0, 1, 0, 0,
-			   0, 0, 1, 0);
-	vector<Mat> P1P2;
-	P1P2.push_back(Mat(P1));
-	P1P2.push_back(Mat(P2));
-	system("PAUSE");*/
-	vector<Mat_<double>> rotTran;
-	rotTran.push_back(R1);
-	rotTran.push_back(R2);
-	rotTran.push_back(tscarkou);
-	rotTran.push_back(-tscarkou);
-	
-	return rotTran;
 }
 
 vector<Point3d> body3DpomociRT(Mat rot, Mat tran, vector<vector<Point2d>> dvojiceBodu, Mat K){
@@ -396,37 +361,34 @@ vector<Point3d> body3DpomociRT(Mat rot, Mat tran, vector<vector<Point2d>> dvojic
 }
 
 void vypocetProjekcnichMatic(Mat_<double>  R, Mat_<double>  t, Matx34d &P1, Matx34d &P2){
-	Matx34d P1(1.0, 0.0, 0.0, 0.0,
-		       0.0, 1.0, 0.0, 0.0,
-			   0.0, 0.0, 1.0, 0.0);
-	Matx34d P2(R(0, 0), R(0, 1), R(0, 2), t(0),
-			   R(1, 0), R(1, 1), R(1, 2), t(1),
-			   R(2, 0), R(2, 1), R(2, 2), t(2));
-	
+	P1 = Matx34d(1.0, 0.0, 0.0, 0.0,
+		0.0, 1.0, 0.0, 0.0,
+		0.0, 0.0, 1.0, 0.0);
+	P2= Matx34d (R(0, 0), R(0, 1), R(0, 2), t(0),
+		R(1, 0), R(1, 1), R(1, 2), t(1),
+		R(2, 0), R(2, 1), R(2, 2), t(2));
 }
 
-void save3Dbody(vector<Point3d> body, String jmeno){
-	
+void save3Dbody(vector<Point3d> body, String jmeno,String cestaXml){
 	FileStorage fr;
-	fr.open("body3D_" + jmeno + ".xml", FileStorage::WRITE);
-
-	fr << "A" << "[";
-	for (int n = 0; n < body.size(); n++)
+	fr.open(cestaXml+"body3D" + jmeno + ".xml", FileStorage::WRITE);
+	fr << jmeno << "[";
+	for (int n = 0; n < body.size() - 1; n++)
 	{
 		fr << body[n].x << "," << body[n].y << "," << body[n].z << ";";
-		
-	}
 
-	fr << "]";
-	fr.release();	
+	}
+	fr << "];";
+	fr.release();
 }
  
 int main()
 {
-	
+	//-------------------promenne---------------------------------------------------
 	vector<vector<vector<KeyPoint>>> All_keypoints;
-	vector<Mat> All_ffmatice;
-	char* adresaChar = "../soubory/fotoKostka/";
+	//char* adresaChar = "../soubory/fotoKostka/";
+	char* adresaChar = "../soubory/sachovnice/";
+	String cestaXml = "../soubory/body3D/";
 	vector<String> nazvyFotek;
 	int maxPocetFotek = 2;
 
@@ -439,50 +401,67 @@ int main()
 		return 5;
 	}
 	vector<vector<DMatch>> all_matches;
-	vector<vector<Mat>> all_rotTran;
-	vector<vector<Point3f>> all_body3D;
-	string nazevSouboruXmlKal = "../soubory/xmlSoubory/kalibraceData0317.xml";
-	Mat cameraMatrix;
-	Mat distCoeffs;
-	vector<String> nazvySouboru;
-	vector<Mat> calibrateDistor = readXmlCameraMatrix(nazevSouboruXmlKal);
-	cameraMatrix = calibrateDistor[0];
-	distCoeffs = calibrateDistor[1];
-	//------------------------------------------------------------------------------------------------
-	cout << "pocet nazvu forek" << nazvyFotek.size() << endl;
+	//string nazevSouboruXmlKal = "../soubory/xmlSoubory/kalibraceData0317.xml";
+	string nazevSouboruXmlKal = "../soubory/xmlSoubory/Kalibrace201604141626.xml";
+	Mat K, distCoeffs;
+	Size  sizeImage;
+	//vector<String> nazvySouboru;
+	readXmlCameraMatrix(nazevSouboruXmlKal, K, distCoeffs, sizeImage);
+	
+	//-------------------hledani-bodu-a-jejich-korespondencnich-bodu---------------------------------------------------
+	cout << "pocet nazvu forek " << nazvyFotek.size() << endl;
 	for (int i = 0; i < nazvyFotek.size() - 1; i++)
 	{
 		// matches
 		vector<DMatch> good_matches = paroveKlicoveBody(nazvyFotek[i], nazvyFotek[i + 1], All_keypoints);
 		all_matches.push_back(good_matches);
 	}
-	//------------------------------------------------------------------------------------------------
+	//---------------------3D-rekonstrukce----------------------------------------------------------------------------
 	int pocetParufotek = all_matches.size();
 	cout << "matchovani bodu dokonceno v poctu" << pocetParufotek << endl;
 	 
 	for (int i = 0; i < pocetParufotek; i++)
 	{
-		cout << i << "kalibracni matice: " << endl << cameraMatrix << endl;
-		vector<vector<Point2d>> dvojiceBodu2D = parovaniDodu(all_matches[i], All_keypoints[i][0], All_keypoints[i][1]);
-		cout << i << ": vytvoreni dvojic 2D bodu" << endl;
+		cout << i + 1 << ". z " << pocetParufotek << " dvojic fotek"<< endl;
+		vector<vector<Point2d>> dvojiceBodu2D = parovaniBodu(all_matches[i], All_keypoints[i][0], All_keypoints[i][1]);//parovani dvojic
+		cout << i+1 << ": vytvoreni dvojic 2D bodu" << endl;
+
+		prevraceniYsouradnice(dvojiceBodu2D[0], sizeImage);// (x1,sizeImage.height - y1)
+		prevraceniYsouradnice(dvojiceBodu2D[1], sizeImage);// (x2,sizeImage.height - y2)
+		cout << i + 1 << ": prevraceni Y souradnice" << endl;
+
 		vector<uchar> status;
-		Mat F = findFundamentalMat(dvojiceBodu2D[0], dvojiceBodu2D[1], FM_RANSAC, 0.1, 0.99, status);//fundamentalni matice
+		Mat F = findFundamentalMat(dvojiceBodu2D[0], dvojiceBodu2D[1], FM_RANSAC, 0.1, 0.99, status);//(x1,y1),(x2,y2) => fundamentalni matice
+		cout << i + 1 << ": vypoctena F matrix" << endl;
 
-		vector<vector<Point3d>> dvojiceBodu2DReal = rozsizeniaPrenasobeniInvK(dvojiceBodu2D, cameraMatrix);
-		vector<Mat_<double>> rot12Tran12 = rozkladFMnaRotaciTranslaci(Mat(F), Mat(cameraMatrix));
+		Mat_<double> R1, R2, t;
+		rozkladFMnaRotaciTranslaci(Mat(F), Mat(K), R1, R2, t); //F => R,t 
+		cout << i + 1 << ": R1, R2, t" << endl;
 
+		vector<Point3d> x1K, x2K;
+		rozsizeniaPrenasobeniInvK(dvojiceBodu2D[0], K, x1K);  //(x1,y1,1)*Kinv
+		rozsizeniaPrenasobeniInvK(dvojiceBodu2D[1], K, x2K); //(x2,y2,1)*Kinv
+		cout << i + 1 << ": x*K" << endl;
+	
 		Matx34d P1, P2;
-		vypocetProjekcnichMatic(rot12Tran12[1], rot12Tran12[2],P1, P2);//tvorba projekcnich matice P1 P2
-		
+		vypocetProjekcnichMatic(R2, t,P1, P2);//tvorba projekcnich matice P1 P2
+		cout << i + 1 << ": P1, P2" << endl;
+
+		cout << i + 1 << ": t" << t << endl;
+		cout << i + 1 << ": R2" << R2 << endl;
+		cout << i + 1 << ": P1" << P1 << endl;
+		cout << i + 1 << ": P2" << P2 << endl;
+		system("PAUSE");
+
 		vector<Point3d> body3D;
-		for (int k = 0; k < dvojiceBodu2DReal[0].size(); k++){
-			Mat_<double> X = LinearLSTriangulation(dvojiceBodu2DReal[0][k], P1, dvojiceBodu2DReal[0][k], P2);
+		for (int k = 0; k < x1K.size(); k++){
+			Mat_<double> X = LinearLSTriangulation(x1K[k], P1, x2K[k], P2); //vypocet 3D bodu
 			body3D.push_back(Point3d(X(0), X(1), X(2)));
 		}
+		cout << i + 1 << ": 3D body" << endl;
 
-		String jmeno = to_string(2) + "_" + to_string(1) + "_Pk12";
-		save3Dbody(body3D, jmeno);	
-	
+		String jmeno = "sachovnice_t";
+		save3Dbody(body3D, jmeno,cestaXml);		
 	}
 	system("PAUSE");
 	return 0;
