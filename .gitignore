@@ -1,5 +1,17 @@
-*.sdf
+#ignoruje složky
+/Rekonstrukce3D/
+/Kalibrace/
+/ConsoleApplication2/
+
+*.opensdf
 *.sln
+*.vcxproj*
+
+*.xml
+
+*.sdf
+*.obj
+*.exe
 x64
 soubory/*
 Release/*
@@ -8,4 +20,32 @@ nacist/*
 ipch/*
 Debag/*
 ConsoleApplication1/*
+*.tlog
+*.idb
+*.pdb
 
+#ignore thumbnails created by windows
+Thumbs.db
+#Ignore files build by Visual Studio
+*.user
+*.aps
+*.pch
+*.vspscc
+*_i.c
+*_p.c
+*.ncb
+*.suo
+*.tlb
+*.tlh
+*.bak
+*.cache
+*.ilk
+*.log
+[Bb]in
+[Dd]ebug*/
+*.lib
+*.sbr
+obj/
+[Rr]elease*/
+_ReSharper*/
+[Tt]est[Rr]esult*
