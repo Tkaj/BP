@@ -209,6 +209,23 @@ vector<DMatch> paroveKlicoveBody(String fotkaL, String fotkaP, vector<vector<vec
 
 vector<vector<Point2d>> parovaniBodu(vector<DMatch> matches, vector<KeyPoint> keypoints1, vector<KeyPoint> keypoints2){ //dvojice klicovych bodu to dvojice souradniv bodu 
 	vector<cv::Point2d> points1, points2;
+	//1 foto //testovacich 6 bodu pro spravnou velikost
+	/*points1.push_back(Point2d(516, 281));
+	points1.push_back(Point2d(516, 311));
+	points1.push_back(Point2d(516, 403));
+
+	points1.push_back(Point2d(608, 283));
+	points1.push_back(Point2d(614, 311));
+	points1.push_back(Point2d(614, 403));
+	//2 foto //testovacich 6 bodu pro spravnou velikost
+	points2.push_back(Point2d(525, 279));
+	points2.push_back(Point2d(509, 309));
+	points2.push_back(Point2d(509, 401));
+
+	points2.push_back(Point2d(617, 285));
+	points2.push_back(Point2d(604, 313));
+	points2.push_back(Point2d(608, 408));*/
+
 	for (int i = 0; i <matches.size(); i++)
 	{
 		// queryIdx is the "left" image
@@ -269,7 +286,7 @@ Mat overenifundMatice(Mat ffMatrix, vector<vector<Point2d>> dvojiceBodu){
 			max = nula.at<float>(0, 0);
 		}
 		all_nula.push_back(nula);
-
+		
 	}
 	return all_nula;
 }
@@ -322,9 +339,11 @@ void rozkladFMnaRotaciTranslaci(Mat F, Mat K, Mat_<double>& R1, Mat_<double>& R2
 	R1 = svd.u * Mat(W) * svd.vt;
 	t = svd.u.col(2);
 	R2 = svd.u * Mat(W).t() * svd.vt;
-	//t(0, 0) = t(1, 0);
-	//t(1, 0) = t(2, 0);
-	//t(2, 0) = t(0, 0);
+
+	double pom = t(0, 0);
+	t(0, 0) = t(1, 0);
+	t(1, 0) = t(2, 0);
+	t(2, 0) = pom;
 
 }
 
@@ -360,13 +379,23 @@ vector<Point3d> body3DpomociRT(Mat rot, Mat tran, vector<vector<Point2d>> dvojic
 	return body3D;
 }
 
-void vypocetProjekcnichMatic(Mat_<double>  R, Mat_<double>  t, Matx34d &P1, Matx34d &P2){
+void vypocetProjekcnichMatic(Mat_<double>  R, Mat_<double>  t, Mat_<double> F, Matx34d &P1, Matx34d &P2){
 	P1 = Matx34d(1.0, 0.0, 0.0, 0.0,
 		0.0, 1.0, 0.0, 0.0,
 		0.0, 0.0, 1.0, 0.0);
-	P2= Matx34d (R(0, 0), R(0, 1), R(0, 2), t(0),
+
+	Matx33d tas(0, -t(2, 0), t(1, 0),
+				 t(2 ,0), 0, -t(0,0),
+			   -t(1,0), t(0,0), 0);
+	
+	Mat_<double> tasF = Mat(tas).t()*F;
+	P2 = Matx34d(tasF(0, 0), tasF(0, 1), tasF(0, 2), t(0),
+				 tasF(1, 0), tasF(1, 1), tasF(1, 2), t(1),
+				 tasF(2, 0), tasF(2, 1), tasF(2, 2), t(2));
+	
+	/*P2= Matx34d (R(0, 0), R(0, 1), R(0, 2), t(0),
 		R(1, 0), R(1, 1), R(1, 2), t(1),
-		R(2, 0), R(2, 1), R(2, 2), t(2));
+		R(2, 0), R(2, 1), R(2, 2), t(2));*/
 }
 
 void save3Dbody(vector<Point3d> body, String jmeno,String cestaXml){
@@ -386,8 +415,8 @@ int main()
 {
 	//-------------------promenne---------------------------------------------------
 	vector<vector<vector<KeyPoint>>> All_keypoints;
-	//char* adresaChar = "../soubory/fotoKostka/";
-	char* adresaChar = "../soubory/sachovnice/";
+	char* adresaChar = "../soubory/fotoKostka/";
+	//char* adresaChar = "../soubory/sachovnice/";
 	String cestaXml = "../soubory/body3D/";
 	vector<String> nazvyFotek;
 	int maxPocetFotek = 2;
@@ -401,8 +430,8 @@ int main()
 		return 5;
 	}
 	vector<vector<DMatch>> all_matches;
-	//string nazevSouboruXmlKal = "../soubory/xmlSoubory/kalibraceData0317.xml";
-	string nazevSouboruXmlKal = "../soubory/xmlSoubory/Kalibrace201604141626.xml";
+	string nazevSouboruXmlKal = "../soubory/xmlSoubory/kalibraceData0317.xml";
+	//string nazevSouboruXmlKal = "../soubory/xmlSoubory/Kalibrace201604141626.xml";
 	Mat K, distCoeffs;
 	Size  sizeImage;
 	//vector<String> nazvySouboru;
@@ -426,33 +455,30 @@ int main()
 		vector<vector<Point2d>> dvojiceBodu2D = parovaniBodu(all_matches[i], All_keypoints[i][0], All_keypoints[i][1]);//parovani dvojic
 		cout << i+1 << ": vytvoreni dvojic 2D bodu" << endl;
 
-		prevraceniYsouradnice(dvojiceBodu2D[0], sizeImage);// (x1,sizeImage.height - y1)
-		prevraceniYsouradnice(dvojiceBodu2D[1], sizeImage);// (x2,sizeImage.height - y2)
+		//prevraceniYsouradnice(dvojiceBodu2D[0], sizeImage);// (x1,sizeImage.height - y1)
+		//prevraceniYsouradnice(dvojiceBodu2D[1], sizeImage);// (x2,sizeImage.height - y2)
 		cout << i + 1 << ": prevraceni Y souradnice" << endl;
 
 		vector<uchar> status;
 		Mat F = findFundamentalMat(dvojiceBodu2D[0], dvojiceBodu2D[1], FM_RANSAC, 0.1, 0.99, status);//(x1,y1),(x2,y2) => fundamentalni matice
 		cout << i + 1 << ": vypoctena F matrix" << endl;
-
+		
 		Mat_<double> R1, R2, t;
 		rozkladFMnaRotaciTranslaci(Mat(F), Mat(K), R1, R2, t); //F => R,t 
 		cout << i + 1 << ": R1, R2, t" << endl;
-
+		cout << i + 1 << ": R1" << R1 << endl;
+		cout << i + 1 << ": t" << t << endl;
 		vector<Point3d> x1K, x2K;
 		rozsizeniaPrenasobeniInvK(dvojiceBodu2D[0], K, x1K);  //(x1,y1,1)*Kinv
 		rozsizeniaPrenasobeniInvK(dvojiceBodu2D[1], K, x2K); //(x2,y2,1)*Kinv
 		cout << i + 1 << ": x*K" << endl;
-	
+		
 		Matx34d P1, P2;
-		vypocetProjekcnichMatic(R2, t,P1, P2);//tvorba projekcnich matice P1 P2
+		vypocetProjekcnichMatic(R2, t ,F ,P1 , P2);//tvorba projekcnich matice P1 P2
 		cout << i + 1 << ": P1, P2" << endl;
-
 		cout << i + 1 << ": t" << t << endl;
-		cout << i + 1 << ": R2" << R2 << endl;
 		cout << i + 1 << ": P1" << P1 << endl;
 		cout << i + 1 << ": P2" << P2 << endl;
-		system("PAUSE");
-
 		vector<Point3d> body3D;
 		for (int k = 0; k < x1K.size(); k++){
 			Mat_<double> X = LinearLSTriangulation(x1K[k], P1, x2K[k], P2); //vypocet 3D bodu
@@ -460,7 +486,7 @@ int main()
 		}
 		cout << i + 1 << ": 3D body" << endl;
 
-		String jmeno = "sachovnice_t";
+		String jmeno = "kostka_plus";
 		save3Dbody(body3D, jmeno,cestaXml);		
 	}
 	system("PAUSE");
