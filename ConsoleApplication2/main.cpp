@@ -47,11 +47,7 @@ int main()
 
 	while (true)
 	{
-		
-
-		cap >> frame; // nacteny novy obrazek z kamery
-
-		
+		cap >> frame; // nacteny novy obrazek z kamery		
 		if (findChessboardCorners(frame, boardSize, centers, CALIB_CB_FAST_CHECK + CALIB_CB_ADAPTIVE_THRESH)){
 
 			drawChessboardCorners(frame, boardSize, centers, true);

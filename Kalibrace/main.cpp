@@ -165,9 +165,9 @@ bool calibrate(vector<vector<Point3f>> objPoints, vector<vector<Point2f>> imgPoi
 
 int main()
 {
-	char* adresaChar = "../soubory/sachovnice/";
+	//char* adresaChar = "../soubory/sachovnice/";
 	String jmenoXml = "../soubory/xmlSoubory/";
-	//String adresa = "../soubory/fotoCameraGrey/";
+	char* adresaChar = "../soubory/kalibrace/";
 
 	vector<String> nazvyFotek;
 	if (nalezNazVsechFot(adresaChar, nazvyFotek) != 1){
@@ -180,7 +180,7 @@ int main()
 	}
 	vector<vector<Point2f> > image_points; // inicializace pro body ze SACHOVNIC 2D
 	Size boardSize = Size(7, 5);  // velikost sachovnice
-	Size imageSize = Size(1920, 1080);//Size(5184, 3456); // velikost vstupnich kalibracnich obrazku (640, 480)
+	Size imageSize = Size(5184, 3456); //Size(1920, 1080); // velikost vstupnich kalibracnich obrazku (640, 480)
 	vector<vector<Point3f>> obj_Points; // object points 3D
 	//vector<String> nazvySouboru; // nazvy Souboru fotek
 	//----------------------------------------------------------------------------------
@@ -189,7 +189,7 @@ int main()
 	if (chessboardKontrol(boardSize, image_points, nazvyFotek)){
 		cout << "vsechny body nalezeny " << endl;
 		// Vytvori 3D synteticke body
-		obj_Points = tvorbaUmelychBodu(boardSize, 3.0f, image_points.size());
+		obj_Points = tvorbaUmelychBodu(boardSize, 30.0f, image_points.size());
 		cout << "tvorba umelych bodu (sachovnic) dokoncena " << endl;
 		
 		// provede kalibraci a ulozi data
