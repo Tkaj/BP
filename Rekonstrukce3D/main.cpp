@@ -165,7 +165,7 @@ vector<DMatch>  loweUpraveneSparovani(Mat descriptorsL, Mat descriptorsR){
 	return good_matches;
 }
 
-vector<DMatch> paroveKlicoveBody(String fotkaL, String fotkaP, vector<vector<vector<KeyPoint>>> &All_keypoints){
+vector<DMatch> paroveKlicoveBody(String fotkaL, String fotkaP, vector<vector<vector<KeyPoint>>> &all_keypoints){
 
 	vector<vector<KeyPoint>> keypoints;
 	Mat descriptorsL;
@@ -182,7 +182,7 @@ vector<DMatch> paroveKlicoveBody(String fotkaL, String fotkaP, vector<vector<vec
 	//nalezeniVyzBodShift(img_2, keypoints);
 	nalezeniVyzBodSurf(img_1, keypoints);
 	nalezeniVyzBodSurf(img_2, keypoints);
-	All_keypoints.push_back(keypoints);
+	all_keypoints.push_back(keypoints);
 	//-- Step 2: Calculate descriptors (feature vectors)
 	vypocetDeskriptoru(img_1, keypoints[0], descriptorsL);
 	vypocetDeskriptoru(img_2, keypoints[1], descriptorsR);
@@ -206,10 +206,16 @@ vector<DMatch> paroveKlicoveBody(String fotkaL, String fotkaP, vector<vector<vec
 
 	return good_matches;
 }
-
-vector<vector<Point2d>> parovaniBodu(vector<DMatch> matches, vector<KeyPoint> keypoints1, vector<KeyPoint> keypoints2){ //dvojice klicovych bodu to dvojice souradniv bodu 
+/**
+*Parovani dvojic odpovidajicich bodu ze dvou fotek 
+@param matches struktura nese informaci o indexech bodu v keypoints1, keypoints2, které patri k sobe
+@param keypoints1 nalezene body z prvni fotky
+@param keypoints2 nalezene body z druhe fotky
+@return [0 vpripade prvni fotky 1 vpripade druhe fotky][index konkretniho bodu]
+*/
+vector<vector<Point2d>> getPairsOfPoints(vector<DMatch> matches, vector<KeyPoint> keypoints1, vector<KeyPoint> keypoints2){ //dvojice klicovych bodu to dvojice souradniv bodu 
 	vector<cv::Point2d> points1, points2;
-	//1 foto //testovacich 6 bodu pro spravnou velikost
+	//1 foto //testovacich 8 bodu pro spravnou velikost
 	points1.push_back(Point2d(2404, 1582));
 	points1.push_back(Point2d(2412, 1704));
 	points1.push_back(Point2d(2413, 1923.5));
@@ -219,7 +225,7 @@ vector<vector<Point2d>> parovaniBodu(vector<DMatch> matches, vector<KeyPoint> ke
 	points1.push_back(Point2d(2848, 1711));
 	points1.push_back(Point2d(2847, 2132));
 	
-	//2 foto //testovacich 6 bodu pro spravnou velikost
+	//2 foto //testovacich 8 bodu pro spravnou velikost
 	points2.push_back(Point2d(2547, 1560));
 	points2.push_back(Point2d(2335, 1668));
 	points2.push_back(Point2d(2332, 1879));
@@ -242,8 +248,12 @@ vector<vector<Point2d>> parovaniBodu(vector<DMatch> matches, vector<KeyPoint> ke
 
 	return dvojiceBodu;
 } //
-//prevradi Y souradnici tak aby smerovala nahoru
-void prevraceniYsouradnice(vector<Point2d>& body,Size sizeImage){
+/**
+*prevradi Y souradnici tak aby smerovala nahoru
+*@param body nacte promennou body a  ulozi a ni body s prazracenou y souradnici 
+*@param sizeImage velikost obrazku (vyska, sirka)
+*/
+void invertedYCoordinate(vector<Point2d>& body,Size sizeImage){
 	for (int j = 0; j < body.size(); j++){
 		body[j].y = sizeImage.height - body[j].y;
 	}
@@ -251,7 +261,6 @@ void prevraceniYsouradnice(vector<Point2d>& body,Size sizeImage){
 
 void readXmlCameraMatrix(string nazevSouboruXmlKal, Mat& cameraMatrix, Mat& distCoeff, Size& imageSize)
 {
-
 	Mat cam, dis;
 	Size imSi;
 	FileStorage fr;
@@ -295,28 +304,40 @@ Mat overenifundMatice(Mat F, vector<vector<Point2d>> dvojiceBodu,double &max){
 
 	return all_nula;
 }
-
-Mat_<double> LinearLSTriangulation(Point3d u, Matx34d P, Point3d u1, Matx34d P1)
+/**
+*vypocet 3D projekcnich bodu
+*@param u rozsireny bod z prvni projekcni roviny (x,y,1)
+*@param P1 projekcni matice z prvni projekcni roviny
+*@param u1 rozsireny bod z druhe projekcni roviny (x,y,1)
+*@param P2 projekcni matice z druhe projekcni roviny
+*@return vypocteny 3D projekcni  bod
+*/
+Mat_<double> linearLSTriangulation(Point3d u, Matx34d P1, Point3d u1, Matx34d P2)
 {
 	//build A matrix
-	Matx43d A(u.x*P(2, 0) - P(0, 0), u.x*P(2, 1) - P(0, 1), u.x*P(2, 2) - P(0, 2),
-		u.y*P(2, 0) - P(1, 0), u.y*P(2, 1) - P(1, 1), u.y*P(2, 2) - P(1, 2),
-		u1.x*P1(2, 0) - P1(0, 0), u1.x*P1(2, 1) - P1(0, 1), u1.x*P1(2, 2) - P1(0, 2),
-		u1.y*P1(2, 0) - P1(1, 0), u1.y*P1(2, 1) - P1(1, 1), u1.y*P1(2, 2) - P1(1, 2)
+	Matx43d A(u.x*P1(2, 0) - P1(0, 0), u.x*P1(2, 1) - P1(0, 1), u.x*P1(2, 2) - P1(0, 2),
+		u.y*P1(2, 0) - P1(1, 0), u.y*P1(2, 1) - P1(1, 1), u.y*P1(2, 2) - P1(1, 2),
+		u1.x*P2(2, 0) - P2(0, 0), u1.x*P2(2, 1) - P2(0, 1), u1.x*P2(2, 2) - P2(0, 2),
+		u1.y*P2(2, 0) - P2(1, 0), u1.y*P2(2, 1) - P2(1, 1), u1.y*P2(2, 2) - P2(1, 2)
 		);
 	//build B vector
-	Matx41d B(-(u.x*P(2, 3) - P(0, 3)),
-		-(u.y*P(2, 3) - P(1, 3)),
-		-(u1.x*P1(2, 3) - P1(0, 3)),
-		-(u1.y*P1(2, 3) - P1(1, 3)));
+	Matx41d B(-(u.x*P1(2, 3) - P1(0, 3)),
+		-(u.y*P1(2, 3) - P1(1, 3)),
+		-(u1.x*P2(2, 3) - P2(0, 3)),
+		-(u1.y*P2(2, 3) - P2(1, 3)));
 	//solve for X
 	Mat_<double> X;
 	solve(A, B, X, DECOMP_SVD);
 	return X;
 	//Point3d(X(0), X(1), X(2)) by mel byt 3D bod
 }
-
-void rozsizeniaPrenasobeniInvK(vector<Point2d> x, Mat cameraMatrix, vector<Point3d>& xK){
+/**
+*metoda rozsiruje bodu o 1 a prenasobuje ho incerznima kalibracni matici (x,y,1)*K^(-1)
+*@param x pole 2D bodu (x,y)
+*@param cameraMatrix matice kalibrace (K) 
+*@param xK do promene xK ulozi rozsireny vektor (x,y,1)*K^(-1)
+*/
+void extensionsMultipliedInvK(vector<Point2d> x, Mat cameraMatrix, vector<Point3d>& xK){
 	
 	for (int j = 0; j < x.size(); j++){
 		Point2d kp1 = x[j];
@@ -326,10 +347,14 @@ void rozsizeniaPrenasobeniInvK(vector<Point2d> x, Mat cameraMatrix, vector<Point
 		xK.push_back(u);
 	}
 }
-
-void rozkladFMnaRotaciTranslaci(Mat F, Mat K, Mat_<double>& R1, Mat_<double>& R2, Mat_<double>& t){
-	Mat E = K.t()*F*K;
-
+/**
+*metoda rozklada esencialni matici pomoci SVD rozkladu a ulozi 2 rotace a 2 translace (pouze 1 dvojice rota a translace je spravna)
+*@param E esencialni matice obsahuje informaci o prechodu mezi dvemi rovinymi projekcemi 
+*@param R1 do promene R1 ulozi vypoctenou rotaci 
+*@param R2 do promene R2 ulozi vypoctenou rotaci
+*@param t  do promene t ulozi vypoctenou translaci (druha translace ma pouze zmenene znamenko)
+*/
+void decomposeFMToRotTrans(Mat E, Mat_<double>& R1, Mat_<double>& R2, Mat_<double>& t){
 	SVD svd(E, SVD::FULL_UV);
 	Mat svd_u = svd.u;
 	Mat svd_vt = svd.vt;
@@ -345,10 +370,10 @@ void rozkladFMnaRotaciTranslaci(Mat F, Mat K, Mat_<double>& R1, Mat_<double>& R2
 	t = svd.u.col(2);
 	R2 = svd.u * Mat(W).t() * svd.vt;
 
-	double pom = t(0, 0);
+	/*double pom = t(0, 0);
 	t(0, 0) = t(1, 0);
 	t(1, 0) = t(2, 0);
-	t(2, 0) = pom;
+	t(2, 0) = pom;*/
 
 }
 
@@ -383,8 +408,15 @@ vector<Point3d> body3DpomociRT(Mat rot, Mat tran, vector<vector<Point2d>> dvojic
 	}
 	return body3D;
 }
-
-void vypocetProjekcnichMatic(Mat_<double>  R, Mat_<double>  t, Mat_<double> F, Matx34d &P1, Matx34d &P2){
+/**
+*metoda vypocte projekcni matice pro 2 rovynna zobrazeni
+*@param R rotace mezi prvni a druhym zobrazenim
+*@param t translace  mezi prvni a druhym zobrazenim
+*@param F fundamentalni matice
+*@param P1  do promene P1 ulozi vypoctenou projekcni matici pro prvni rovinu zobrazeni
+*@param P2  do promene P2 ulozi vypoctenou projekcni matici pro druhou rovinu zobrazeni
+*/
+void getProjectionMatrix(Mat_<double>  R, Mat_<double>  t, Mat_<double> F, Matx34d &P1, Matx34d &P2){
 	P1 = Matx34d(1.0, 0.0, 0.0, 0.0,
 		0.0, 1.0, 0.0, 0.0,
 		0.0, 0.0, 1.0, 0.0);
@@ -402,116 +434,145 @@ void vypocetProjekcnichMatic(Mat_<double>  R, Mat_<double>  t, Mat_<double> F, M
 		R(1, 0), R(1, 1), R(1, 2), t(1),
 		R(2, 0), R(2, 1), R(2, 2), t(2));*/
 }
-void homogenizace3Dbodu(vector<Point3d> bodyP, vector<Point3d> &bodyH){
+/**
+*metoda ktera prepocitava projekcni body a eukleidovske
+*@param bodyP projekcni body
+*@param bodyH do promene bodyH ulozi vypoctene eukleidovske body
+*/
+void getEukleidenPointsFromProjection(vector<Point3d> bodyP, vector<Point3d> &bodyH){
 
 
 	//Od projekèních(X3p) 3D bodù rovnou k eukleidovským X3e pomocí homografie
 	//Kontrolni body bkp - projekeni(prvnich osm), - k nim odpovídající eukleidovské a vyroba matice H
-	Point3d uEB1_ = (1, 1, 9); Point3d uEB2_ = (1, 1, 1); Point3d uEB3_ = (1, 5, 1); Point3d uEB4_ = (1, 9, 1);
-	Point3d uEB5_ = (9, 1, 9); Point3d uEB6_ = (9, 1, 5); Point3d uEB7_ = (9, 1, 9); Point3d uEB8_ = (9, 9, 1);
-	vector<Point3d> uEBody;
-	uEBody.push_back(uEB1_); uEBody.push_back(uEB2_); uEBody.push_back(uEB3_); uEBody.push_back(uEB4_);
-	uEBody.push_back(uEB5_); uEBody.push_back(uEB6_); uEBody.push_back(uEB7_); uEBody.push_back(uEB8_);
-	vector<Point3d> uPBody;
-	uPBody.push_back(bodyP[0]); uPBody.push_back(bodyP[1]); uPBody.push_back(bodyP[2]); uPBody.push_back(bodyP[3]);
-	uPBody.push_back(bodyP[4]); uPBody.push_back(bodyP[5]); uPBody.push_back(bodyP[6]); uPBody.push_back(bodyP[7]);
 
+	//zvolenych 5 projekcnich a 5eukleidovskych bodu
 	vector<Point3d> uPB5, uEB5;
-	uPB5.push_back(bodyP[0]); uPB5.push_back(bodyP[2]); uPB5.push_back(bodyP[3]); uPB5.push_back(bodyP[4]); uPB5.push_back(bodyP[5]);
-	uEB5.push_back(bodyP[0]); uEB5.push_back(bodyP[2]); uEB5.push_back(bodyP[3]); uEB5.push_back(bodyP[4]); uEB5.push_back(bodyP[5]);
+	uPB5.push_back(bodyP[0]); 
+	uPB5.push_back(bodyP[2]); 
+	uPB5.push_back(bodyP[3]); 
+	uPB5.push_back(bodyP[4]);
+	uPB5.push_back(bodyP[5]);
 
-	Mat A = Mat(15, 16, CV_8UC3);
+	uEB5.push_back(Point3d(1, 1, 9));
+	uEB5.push_back(Point3d(1, 5, 1));
+	uEB5.push_back(Point3d(1, 9, 1));
+	uEB5.push_back(Point3d(9, 1, 9));
+	uEB5.push_back(Point3d(9, 1, 5));
+
+	//vypocet matice A(15,16) 
+	//vypocet matice A je:
+	//kazdé 3 radky jsou pro jeden bod
+	Mat A = Mat::zeros(15, 16, CV_64FC1);
 	for (int i = 0; i < 5; i++){
 		//1+3i radek matice A
 		A.at<double>(0 + 3 * i, 0) = -uPB5[i].x;
 		A.at<double>(0 + 3 * i, 1) = -uPB5[i].y;
 		A.at<double>(0 + 3 * i, 2) = -uPB5[i].z;
 		A.at<double>(0 + 3 * i, 3) = -1;
-		A.at<double>(0 + 3 * i, 12) = uPB5[i].x* uPB5[i].x;
-		A.at<double>(0 + 3 * i, 13) = uPB5[i].y*uPB5[i].x;
-		A.at<double>(0 + 3 * i, 14) = uPB5[i].z*uPB5[i].x;
-		A.at<double>(0 + 3 * i, 14) = 1 * uPB5[i].x;
+		A.at<double>(0 + 3 * i, 12) = uPB5[i].x * uEB5[i].x;
+		A.at<double>(0 + 3 * i, 13) = uPB5[i].y * uEB5[i].x;
+		A.at<double>(0 + 3 * i, 14) = uPB5[i].z * uEB5[i].x;
+		A.at<double>(0 + 3 * i, 15) = 1 * uEB5[i].x;
 		//2+3i radek matice A
 		A.at<double>(1 + 3 * i, 4) = -uPB5[i].x;
 		A.at<double>(1 + 3 * i, 5) = -uPB5[i].y;
 		A.at<double>(1 + 3 * i, 6) = -uPB5[i].z;
 		A.at<double>(1 + 3 * i, 7) = -1;
-		A.at<double>(1 + 3 * i, 12) = uPB5[i].x* uPB5[i].y;
-		A.at<double>(1 + 3 * i, 13) = uPB5[i].y*uPB5[i].y;
-		A.at<double>(1 + 3 * i, 14) = uPB5[i].z*uPB5[i].y;
-		A.at<double>(1 + 3 * i, 14) = 1 * uPB5[i].y;
+		A.at<double>(1 + 3 * i, 12) = uPB5[i].x* uEB5[i].y;
+		A.at<double>(1 + 3 * i, 13) = uPB5[i].y*uEB5[i].y;
+		A.at<double>(1 + 3 * i, 14) = uPB5[i].z*uEB5[i].y;
+		A.at<double>(1 + 3 * i, 15) = 1 * uEB5[i].y;
 		//3+3i radek matice A
 		A.at<double>(2 + 3 * i, 8) = -uPB5[i].x;
 		A.at<double>(2 + 3 * i, 9) = -uPB5[i].y;
 		A.at<double>(2 + 3 * i, 10) = -uPB5[i].z;
 		A.at<double>(2 + 3 * i, 11) = -1;
-		A.at<double>(2 + 3 * i, 12) = uPB5[i].x* uPB5[i].y;
-		A.at<double>(2 + 3 * i, 13) = uPB5[i].y*uPB5[i].y;
-		A.at<double>(2 + 3 * i, 14) = uPB5[i].z*uPB5[i].y;
-		A.at<double>(2 + 3 * i, 14) = 1 * uPB5[i].y;
+		A.at<double>(2 + 3 * i, 12) = uPB5[i].x* uEB5[i].z;
+		A.at<double>(2 + 3 * i, 13) = uPB5[i].y*uEB5[i].z;
+		A.at<double>(2 + 3 * i, 14) = uPB5[i].z*uEB5[i].z;
+		A.at<double>(2 + 3 * i, 15) = 1 * uEB5[i].z;
 	}
+	//SVD rozklad matice A
 	SVD svd(A, SVD::FULL_UV);
 	Mat svd_u = svd.u;
 	Mat svd_vt = svd.vt;
 	Mat svd_w = svd.w;
-	svd_vt.at<double>(14, 0);
-	//matice homogeni
-	Matx44d H(svd_vt.at<double>(14, 0), svd_vt.at<double>(14, 1), svd_vt.at<double>(14, 2), svd_vt.at<double>(14, 3),
-		svd_vt.at<double>(14, 4), svd_vt.at<double>(14, 5), svd_vt.at<double>(14, 6), svd_vt.at<double>(14, 7),
-		svd_vt.at<double>(14, 8), svd_vt.at<double>(14, 9), svd_vt.at<double>(14, 10), svd_vt.at<double>(14, 11),
-		svd_vt.at<double>(14, 12), svd_vt.at<double>(14, 13), svd_vt.at<double>(14, 14), svd_vt.at<double>(14, 15));
-	// 
 	
+	//matice homogeni
+	Matx44d H(svd_vt.at<double>(15, 0), svd_vt.at<double>(15, 1), svd_vt.at<double>(15, 2), svd_vt.at<double>(15, 3),
+		svd_vt.at<double>(15, 4), svd_vt.at<double>(15, 5), svd_vt.at<double>(15, 6), svd_vt.at<double>(15, 7),
+		svd_vt.at<double>(15, 8), svd_vt.at<double>(15, 9), svd_vt.at<double>(15, 10), svd_vt.at<double>(15, 11),
+		svd_vt.at<double>(15, 12), svd_vt.at<double>(15, 13), svd_vt.at<double>(15, 14), svd_vt.at<double>(15, 15));
+	 
+	
+	cout << "H: " << H << endl;
+	double konstaTomiczkova = 10000 / 15;
+	//H = H * konstaTomiczkova; 
+	cout << "H: " << H << endl;
+	system("PAUSE");
 	for (int i = 0; i < bodyP.size(); i++){
 		Matx41d hB4d;
-		hB4d(0, 0) = bodyP[i].x; hB4d(1, 0) = bodyP[i].y; hB4d(2, 0) = bodyP[i].z; hB4d(3, 0) = 1;
-		hB4d = H*hB4d;
+		hB4d(0, 0) = bodyP[i].x;
+		hB4d(1, 0) = bodyP[i].y; 
+		hB4d(2, 0) = bodyP[i].z; 
+		hB4d(3, 0) = 1.0;
+		cout << "bD: " << hB4d << endl;
+		Matx41d bod4D;
+		bod4D = H*hB4d;
+		cout << "HbD: " << bod4D << endl;
+		system("PAUSE");
 		Point3d bH;
-		bH.x = hB4d(0, 0) / hB4d(3, 0);
-		bH.y = hB4d(1, 0) / hB4d(3, 0);
-		bH.z = hB4d(2, 0) / hB4d(3, 0);
+		bH.x = bod4D(0, 0) / bod4D(3, 0);
+		bH.y = bod4D(1, 0) / bod4D(3, 0);
+		bH.z = bod4D(2, 0) / bod4D(3, 0);
+
+		cout << "bH: " << bH << endl;
+		system("PAUSE");
 		bodyH.push_back(bH);
 	}
 
 }
-void save2Dbody(vector<vector<vector<KeyPoint>>> All_keypoints, vector<vector<DMatch>> all_matches,String cesta2Dbody){
-	int pocetParufotek = all_matches.size();
-	vector<vector<vector<Point2d>>> all_dvojiceBodu2D;
-	for (int i = 0; i < pocetParufotek; i++){
-		vector<vector<Point2d>> dvojiceBodu2D = parovaniBodu(all_matches[i], All_keypoints[i][0], All_keypoints[i][1]);//parovani dvojic
-		all_dvojiceBodu2D.push_back(dvojiceBodu2D); //vsechny parove body dvojic fotek [dvojice fotek][0,1 prvni, nebo druha][bod]
+
+void save2Dbody(vector<vector<vector<KeyPoint>>> all_keypoints, vector<vector<DMatch>> all_matches,String cesta2Dbody){
+	int imageMatchesCount = all_matches.size();
+	vector<vector<vector<Point2d>>> all_pairPoints2D;
+	for (int i = 0; i < imageMatchesCount; i++){
+		vector<vector<Point2d>> pairPoints2D = getPairsOfPoints(all_matches[i], all_keypoints[i][0], all_keypoints[i][1]);//parovani dvojic
+		all_pairPoints2D.push_back(pairPoints2D); //vsechny parove body dvojic fotek [dvojice fotek][0,1 prvni, nebo druha][bod]
 	}
 
 	FileStorage fr;
 	fr.open(cesta2Dbody + "body2D.xml", FileStorage::WRITE);
-	for (int i = 0; i < pocetParufotek; i++){
-		int delkaPrvniho = all_dvojiceBodu2D[i][0].size();
-		int delkadruheho = all_dvojiceBodu2D[i][1].size();
+	for (int i = 0; i < imageMatchesCount; i++){
+		int delkaPrvniho = all_pairPoints2D[i][0].size();
+		int delkadruheho = all_pairPoints2D[i][1].size();
 		fr << "paroveBodyFotek" << "[";
 		
 		
 		for (int n = 0; n < delkaPrvniho - 1; n++)
 		{
 			fr << "{:";
-			fr << "bod1" << all_dvojiceBodu2D[i][0][n];
+			fr << "bod1" << all_pairPoints2D[i][0][n];
 			fr << "}";
 		}
-
 		for (int n = 0; n < delkadruheho - 1; n++)
 		{
 			fr << "{:";
-			fr << "bod2" << all_dvojiceBodu2D[i][1][n];
+			fr << "bod2" << all_pairPoints2D[i][1][n];
 			fr << "}";
 		}
-		
-		
 		fr << "]";
 	}
-	fr.release();
-	
+	fr.release();	
 }
 
-void save3Dbody(vector<Point3d> body, String jmeno,String cestaXml){
+/**
+*metoda uklada vektor 3D bodu do souboru xml
+*@param body vektor 3D bodu
+*@param jmeno je retezec znaku ktery bode obsazen v nazvu souboru
+*@param castaXml cesta kam se ma soubor ulozit
+*/
+void save3DPoints(vector<Point3d> body, String jmeno,String cestaXml){
 	FileStorage fr;
 	fr.open(cestaXml+"body3D" + jmeno + ".xml", FileStorage::WRITE);
 	fr << jmeno << "[";
@@ -527,12 +588,13 @@ void save3Dbody(vector<Point3d> body, String jmeno,String cestaXml){
 int main()
 {
 	//-------------------promenne---------------------------------------------------
-	vector<vector<vector<KeyPoint>>> All_keypoints;
+	vector<vector<vector<KeyPoint>>> all_keypoints;
 	char* adresaChar = "../soubory/kostka_mereni/";
 	//char* adresaChar = "../soubory/sachovnice/";
 	String cestaXml = "../soubory/body3D/";
 	String cesta2Dbody = "../soubory/";
 	vector<String> nazvyFotek;
+
 	int maxPocetFotek = 2;
 
 	if (nalezNazVsechFot(adresaChar, nazvyFotek, maxPocetFotek) != 1){
@@ -546,84 +608,67 @@ int main()
 	vector<vector<DMatch>> all_matches;
 	string nazevSouboruXmlKal = "../soubory/xmlSoubory/kalibraceData0317.xml";
 	//string nazevSouboruXmlKal = "../soubory/xmlSoubory/Kalibrace201604141626.xml";
-	Mat K, distCoeffs;
+	Mat cameraMatrix, distCoeffs;
+	Mat_<double> R1, R2, t;// rotace R1,R2 translace t
+	vector<Point3d> x1K, x2K; // body rozsirene a pranasobene incerznima K (x,y,1)*K^(-1)
+	Matx34d P1, P2; //projekcni matice
+	vector<Point3d> body3D; // vypoctene 3D body
+	vector<Point3d> bodyH; //body povynasobeni matici homografie => eukleidovske body
 	Size  sizeImage;
 	//vector<String> nazvySouboru;
-	readXmlCameraMatrix(nazevSouboruXmlKal, K, distCoeffs, sizeImage);
+	readXmlCameraMatrix(nazevSouboruXmlKal, cameraMatrix, distCoeffs, sizeImage);
 
 	//-------------------hledani-bodu-a-jejich-korespondencnich-bodu---------------------------------------------------
 	cout << "pocet nazvu forek " << nazvyFotek.size() << endl;
 	for (int i = 0; i < nazvyFotek.size() - 1; i++)
 	{
 		// matches
-		vector<DMatch> good_matches = paroveKlicoveBody(nazvyFotek[i], nazvyFotek[i + 1], All_keypoints);
+		vector<DMatch> good_matches = paroveKlicoveBody(nazvyFotek[i], nazvyFotek[i + 1], all_keypoints);
 		all_matches.push_back(good_matches);
 	}
+	int imageMatchesCount = all_matches.size(); //pocet paru fotek
+	cout << "matchovani bodu dokonceno v poctu" << imageMatchesCount << endl;
 	/*cout << "zacatek save" << endl;
-	save2Dbody(All_keypoints, all_matches, cesta2Dbody);
+	save2Dbody(all_keypoints, all_matches, cesta2Dbody);
 	cout << "konec save" << endl;
 	system("PAUSE");*/
 	//---------------------3D-rekonstrukce----------------------------------------------------------------------------
-	int pocetParufotek = all_matches.size();
-	cout << "matchovani bodu dokonceno v poctu" << pocetParufotek << endl;
-	 
-	for (int i = 0; i < pocetParufotek; i++)
+	for (int i = 0; i < imageMatchesCount; i++)
 	{
-		cout << i + 1 << ". z " << pocetParufotek << " dvojic fotek" << endl;
-		vector<vector<Point2d>> dvojiceBodu2D = parovaniBodu(all_matches[i], All_keypoints[i][0], All_keypoints[i][1]);//parovani dvojic
+		cout << i + 1 << ". z " << imageMatchesCount << " dvojic fotek" << endl;
+		vector<vector<Point2d>> pairPoints2D = getPairsOfPoints(all_matches[i], all_keypoints[i][0], all_keypoints[i][1]);
 		cout << i + 1 << ": vytvoreni dvojic 2D bodu" << endl;
 
-		if (dvojiceBodu2D[0].size() != dvojiceBodu2D[1].size()){
-			cout << "!!! reterce parových bodu jsou jinak velike "<< endl;
-			system("PAUSE");
+		if (pairPoints2D[0].size() != pairPoints2D[1].size()){ //pokud pocet parovych bodu prvni a druhe fotky naodpovida ukonci program
+			cout << i + 1 << ": pocet parovych bodu prvni a druhe fotky neni stejny " << endl;
 			return 5;
 		}
-		//prevraceniYsouradnice(dvojiceBodu2D[0], sizeImage);// (x1,sizeImage.height - y1)
-		//prevraceniYsouradnice(dvojiceBodu2D[1], sizeImage);// (x2,sizeImage.height - y2)
+		//invertedYCoordinate(pairPoints2D[0], sizeImage);// (x1,sizeImage.height - y1)
+		//invertedYCoordinate(pairPoints2D[1], sizeImage);// (x2,sizeImage.height - y2)
 		//cout << i + 1 << ": prevraceni Y souradnice" << endl;
 
-		vector<uchar> status;
-		Mat F = findFundamentalMat(dvojiceBodu2D[0], dvojiceBodu2D[1], FM_RANSAC, 0.1, 0.99, status);//(x1,y1),(x2,y2) => fundamentalni matice
+		Mat F = findFundamentalMat(pairPoints2D[0], pairPoints2D[1], FM_RANSAC, 0.1, 0.99);//(x1,y1),(x2,y2) => fundamentalni matice
 		cout << i + 1 << ": vypoctena F matrix" << endl;
-		cout << i + 1 << F << endl;
-		system("PAUSE");
-		Mat_<double> R1, R2, t;
-		rozkladFMnaRotaciTranslaci(Mat(F), Mat(K), R1, R2, t); //F => R,t 
 
-		cout << i + 1 << "rotace" << endl;
-		cout << i + 1 <<"t"<< t << endl;
-		vector<Point3d> x1K, x2K;
-		rozsizeniaPrenasobeniInvK(dvojiceBodu2D[0], K, x1K);  //(x1,y1,1)*Kinv
-		rozsizeniaPrenasobeniInvK(dvojiceBodu2D[1], K, x2K); //(x2,y2,1)*Kinv
-		//cout << i + 1 << ": x*K" << endl;
-		
-		cout << x1K[0] << " -dd-" << x2K[0] << endl;
-		cout << x1K[1] << " -dd-" << x2K[1] << endl;
-		cout << x1K[2] << " -dd-" << x2K[2] << endl;
-		cout << x1K[3] << " -dd-" << x2K[3] << endl;
-		cout << x1K[4] << " -dd-" << x2K[4] << endl;
-		cout << x1K[5] << " -dd-" << x2K[5] << endl;
-		cout << x1K[6] << " -dd-" << x2K[6] << endl;
-		cout << x1K[7] << " -dd-" << x2K[7] << endl;
-		system("PAUSE");
+		Mat E = cameraMatrix.t()*Mat(F)*cameraMatrix; //esencialni matice
 
-		Matx34d P1, P2;
-		vypocetProjekcnichMatic(R2, t ,F ,P1 , P2);//tvorba projekcnich matice P1 P2
-		cout << i + 1 << ": P1, P2" << endl;
-		cout << i + 1 << ": t" << t << endl;
-		cout << i + 1 << ": P1" << P1 << endl;
-		cout << i + 1 << ": P2" << P2 << endl;
+		decomposeFMToRotTrans(E, R1, R2, t); //F => R,t 
+		cout << i + 1 << "rotace a translace" << endl;
 
+		extensionsMultipliedInvK(pairPoints2D[0], cameraMatrix, x1K);  //(x1,y1,1)*Kinv
+		extensionsMultipliedInvK(pairPoints2D[1], cameraMatrix, x2K); //(x2,y2,1)*Kinv
 
-		vector<Point3d> body3D;
+		getProjectionMatrix(R2, t ,F ,P1 , P2);//tvorba projekcnich matice P1 P2
+	
 		for (int k = 0; k < x1K.size(); k++){
-			Mat_<double> X = LinearLSTriangulation(x1K[k], P1, x2K[k], P2); //vypocet 3D bodu
+			Mat_<double> X = linearLSTriangulation(x1K[k], P1, x2K[k], P2); //vypocet 3D bodu
+			//!!!!!!!!!!!!!!ovezit zda neleze z metody 4D bod!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 			body3D.push_back(Point3d(X(0), X(1), X(2)));
 		}
-		cout << i + 1 << ": 3D body" << endl;
+		getEukleidenPointsFromProjection(body3D, bodyH);
 
-		String jmeno = "kostka_spravne_velikost_fotek";
-		save3Dbody(body3D, jmeno,cestaXml);	
+		save3DPoints(body3D, "kostka", cestaXml);
+		save3DPoints(bodyH, "kostka_po_homografii", cestaXml);
 	}
 	system("PAUSE");
 	return 0;
