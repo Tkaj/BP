@@ -77,27 +77,6 @@ int nalezeniVyzBodSurf(Mat obrazek, vector<vector<KeyPoint>> &klice)
 	return nelezeno = 0;
 }
 
-int nalezeniVyzBodShift(Mat img, vector<vector<KeyPoint>> &klice)
-{
-
-	Mat frame;
-	vector<KeyPoint> keypoints;
-	Mat output;
-
-		Ptr<FeatureDetector> feature_detector = FeatureDetector::create("SIFT");
-		feature_detector->detect(img, keypoints);
-
-		klice.push_back(keypoints);
-	
-		drawKeypoints(img, keypoints, output, Scalar::all(-1));
-
-	namedWindow("SHIFT-method", CV_WINDOW_AUTOSIZE);
-	imshow("SHIFT-method", output);
-	waitKey(30);
-
-	return 0;
-}
-
 int vypocetDeskriptoru(Mat img, vector<KeyPoint> keypoints, Mat &descriptors)
 {
 	//-- Step 2: Calculate descriptors (feature vectors)
@@ -248,17 +227,14 @@ vector<vector<Point2d>> getPairsOfPoints(vector<DMatch> matches, vector<KeyPoint
 
 	return dvojiceBodu;
 } //
-/**
-*prevradi Y souradnici tak aby smerovala nahoru
-*@param body nacte promennou body a  ulozi a ni body s prazracenou y souradnici 
-*@param sizeImage velikost obrazku (vyska, sirka)
-*/
-void invertedYCoordinate(vector<Point2d>& body,Size sizeImage){
-	for (int j = 0; j < body.size(); j++){
-		body[j].y = sizeImage.height - body[j].y;
-	}
-}
 
+/**
+*metoda nacita matice cameraMatrix distCoeff a imageSize
+*@param nazevSouboruXmlKal cely nazev souboru i s cestou
+*@param cameraMatrix do promene cameraMatrix nacte ze souboru cameraMatrix
+*@param distCoeff do promene distCoeff nacte ze souboru distCoeff
+*@param imageSize do promene imageSize nacte ze souboru imageSize 
+*/
 void readXmlCameraMatrix(string nazevSouboruXmlKal, Mat& cameraMatrix, Mat& distCoeff, Size& imageSize)
 {
 	Mat cam, dis;
@@ -273,39 +249,19 @@ void readXmlCameraMatrix(string nazevSouboruXmlKal, Mat& cameraMatrix, Mat& dist
 	distCoeff = dis;
 	imageSize = imSi;
 }
-
-Mat overenifundMatice(Mat F, vector<vector<Point2d>> dvojiceBodu,double &max){
-
-	Mat nula;
-	Mat all_nula;
-	Point3f prvni;
-	Point3f druhy;
-	//double max = 0;
-	for (int a = 0; a < dvojiceBodu[0].size(); a++){
-		prvni.x = dvojiceBodu[0][a].x;
-		prvni.y = dvojiceBodu[0][a].y;
-		prvni.z = 1;
-		Mat prvnim = Mat(prvni);
-		prvnim.convertTo(prvnim, CV_64F);
-		druhy.x = dvojiceBodu[1][a].x;
-		druhy.y = dvojiceBodu[1][a].y;
-		druhy.z = 1;
-		Mat druhym = Mat(druhy);
-		druhym.convertTo(druhym, CV_64F);
-
-		nula = Mat(prvnim).t()*F*Mat(druhym);
-		if (max < nula.at<double>(0, 0)){
-			max = nula.at<double>(0, 0);
-		}
-		all_nula.push_back(nula);
-		
-	}
-
-
-	return all_nula;
-}
 /**
-*vypocet 3D projekcnich bodu
+*metoda pocita esencialni matici
+*@param F fundamentalni matice
+*@param cameraMatrix kalibracni matice
+*@return E esencialni matice
+*/
+Mat calculationEssentialMat(Mat F, Mat cameraMatrix){
+	Mat E = cameraMatrix.t()*Mat(F)*cameraMatrix;
+	return E;
+}
+
+/**
+*vypocet 3D projekcniho bodu
 *@param u rozsireny bod z prvni projekcni roviny (x,y,1)
 *@param P1 projekcni matice z prvni projekcni roviny
 *@param u1 rozsireny bod z druhe projekcni roviny (x,y,1)
@@ -332,12 +288,27 @@ Mat_<double> linearLSTriangulation(Point3d u, Matx34d P1, Point3d u1, Matx34d P2
 	//Point3d(X(0), X(1), X(2)) by mel byt 3D bod
 }
 /**
+*metoda pocitajici 3D projekcni body dvou obrazu vyuzivajici metodu linearLSTriangulation
+*@param x1K rozsireny bod z prvni projekcni roviny (x,y,1)*K^(-1)
+*@param P1 projekcni matice z prvni projekcni roviny
+*@param x2K rozsireny bod z druhe projekcni roviny (x,y,1)*K^(-1)
+*@param P2 projekcni matice z druhe projekcni roviny
+
+*/
+void calculation3DProjectionPoints(vector<Point3d> x1K, Matx34d P1, vector<Point3d> x2K, Matx34d P2, vector<Point3d> &points3D){
+	for (int k = 0; k < x1K.size(); k++){
+		Mat_<double> X = linearLSTriangulation(x1K[k], P1, x2K[k], P2); //vypocet 3D bodu
+		points3D.push_back(Point3d(X(0), X(1), X(2)));
+	}
+}
+
+/**
 *metoda rozsiruje bodu o 1 a prenasobuje ho incerznima kalibracni matici (x,y,1)*K^(-1)
 *@param x pole 2D bodu (x,y)
 *@param cameraMatrix matice kalibrace (K) 
 *@param xK do promene xK ulozi rozsireny vektor (x,y,1)*K^(-1)
 */
-void extensionsMultipliedInvK(vector<Point2d> x, Mat cameraMatrix, vector<Point3d>& xK){
+void extensionsMultipliedInvK(vector<Point2d> x, vector<Point3d>& xK,Mat cameraMatrix){
 	
 	for (int j = 0; j < x.size(); j++){
 		Point2d kp1 = x[j];
@@ -377,37 +348,6 @@ void decomposeFMToRotTrans(Mat E, Mat_<double>& R1, Mat_<double>& R2, Mat_<doubl
 
 }
 
-vector<Point3d> body3DpomociRT(Mat rot, Mat tran, vector<vector<Point2d>> dvojiceBodu, Mat K){
-	vector<Point3d> body3D;
-	//------------------------------------------------------------------------------
-	for (int i = 0; i < dvojiceBodu[0].size(); i++){ //cyklus pres dvojice bodu
-		Point3d Y;
-		Y.x = dvojiceBodu[0][i].x;
-		Y.y = dvojiceBodu[0][i].y;
-		Y.z = 1.0;
-		Point3d Yo;
-		Yo.x = dvojiceBodu[1][i].x;
-		Yo.y = dvojiceBodu[1][i].y;
-		Yo.z = 1.0;		
-		//---------------------
-		Mat Ymat = K.inv()*Mat(Y);//pretypovani 
-		Ymat.convertTo(Ymat, CV_64F);
-		//---------------------------
-		Mat Yomat = K.inv()*Mat(Yo);//pretypovani 
-		Yomat.convertTo(Ymat, CV_64F);
-		//------------------------------vzorecek pro dopocet z-ove souradnice (hloubka)
-		Mat cinitel = (rot.row(1) - Yomat.at<double>(1,0)*rot.row(2)).t(); //Rotace(druhy radek) - y` * /Rotace(treti radek) 
-		float a = cinitel.dot(tran); // citatel = citatelJmenovatel * Y
-		float b = cinitel.dot(Ymat);
-		float hloubka = a / b; //vypocet z-ove souradnice bodu Y
-		Ymat = Ymat * hloubka;
-		Y.x = Ymat.at<double>(0,0);
-		Y.y = Ymat.at<double>(1,0);
-		Y.z = Ymat.at<double>(2,0);
-		body3D.push_back(Y);
-	}
-	return body3D;
-}
 /**
 *metoda vypocte projekcni matice pro 2 rovynna zobrazeni
 *@param R rotace mezi prvni a druhym zobrazenim
@@ -437,10 +377,11 @@ void getProjectionMatrix(Mat_<double>  R, Mat_<double>  t, Mat_<double> F, Matx3
 /**
 *metoda ktera prepocitava projekcni body a eukleidovske
 *@param bodyP projekcni body
+*@param pPoinsts korespondujici projekcni body s eukleidovskymi body ePoints
+*@param ePoinsts korespondujici eukleidovske body s projekcnimibody pPoints
 *@param bodyH do promene bodyH ulozi vypoctene eukleidovske body
 */
-void getEukleidenPointsFromProjection(vector<Point3d> bodyP, vector<Point3d> &bodyH){
-
+void getEukleidenPointsFromProjection(vector<Point3d> bodyP, vector<Point3d> pPoinsts, vector<Point3d>  ePoints, vector<Point3d> &bodyH){
 
 	//Od projekèních(X3p) 3D bodù rovnou k eukleidovským X3e pomocí homografie
 	//Kontrolni body bkp - projekeni(prvnich osm), - k nim odpovídající eukleidovské a vyroba matice H
@@ -504,68 +445,55 @@ void getEukleidenPointsFromProjection(vector<Point3d> bodyP, vector<Point3d> &bo
 		svd_vt.at<double>(15, 8), svd_vt.at<double>(15, 9), svd_vt.at<double>(15, 10), svd_vt.at<double>(15, 11),
 		svd_vt.at<double>(15, 12), svd_vt.at<double>(15, 13), svd_vt.at<double>(15, 14), svd_vt.at<double>(15, 15));
 	 
-	
-	cout << "H: " << H << endl;
+
 	double konstaTomiczkova = 10000 / 15;
 	//H = H * konstaTomiczkova; 
-	cout << "H: " << H << endl;
-	system("PAUSE");
+	
 	for (int i = 0; i < bodyP.size(); i++){
 		Matx41d hB4d;
 		hB4d(0, 0) = bodyP[i].x;
 		hB4d(1, 0) = bodyP[i].y; 
 		hB4d(2, 0) = bodyP[i].z; 
 		hB4d(3, 0) = 1.0;
-		cout << "bD: " << hB4d << endl;
+
 		Matx41d bod4D;
 		bod4D = H*hB4d;
-		cout << "HbD: " << bod4D << endl;
-		system("PAUSE");
+	
 		Point3d bH;
 		bH.x = bod4D(0, 0) / bod4D(3, 0);
 		bH.y = bod4D(1, 0) / bod4D(3, 0);
 		bH.z = bod4D(2, 0) / bod4D(3, 0);
 
-		cout << "bH: " << bH << endl;
-		system("PAUSE");
+	
 		bodyH.push_back(bH);
 	}
 
 }
 
-void save2Dbody(vector<vector<vector<KeyPoint>>> all_keypoints, vector<vector<DMatch>> all_matches,String cesta2Dbody){
-	int imageMatchesCount = all_matches.size();
-	vector<vector<vector<Point2d>>> all_pairPoints2D;
-	for (int i = 0; i < imageMatchesCount; i++){
-		vector<vector<Point2d>> pairPoints2D = getPairsOfPoints(all_matches[i], all_keypoints[i][0], all_keypoints[i][1]);//parovani dvojic
-		all_pairPoints2D.push_back(pairPoints2D); //vsechny parove body dvojic fotek [dvojice fotek][0,1 prvni, nebo druha][bod]
-	}
+/**
+*metoda pocitajici projekcni 3D body 
+*@param pairPoints2D pole parovych 2D bodu
+*@param cameraMatrix kalibracni matice
+*@param points3D do promene points3D uklada vypoctene 3D projekcni body
+*/
+void reconstraction3DObjectOfTwoPicturesMatchesPoints(vector<vector<Point2d>>pairPoints2D, Mat cameraMatrix, vector<Point3d> &points3D){
+	Mat F; //fundamentalni matice
+	Mat E; //esencialni matice
+	Mat_<double> R1, R2, t;// rotace R1,R2 translace t
+	vector<Point3d> x1K, x2K; // body rozsirene a pranasobene incerznima K (x,y,1)*K^(-1)
+	Matx34d P1, P2; //projekcni matice
 
-	FileStorage fr;
-	fr.open(cesta2Dbody + "body2D.xml", FileStorage::WRITE);
-	for (int i = 0; i < imageMatchesCount; i++){
-		int delkaPrvniho = all_pairPoints2D[i][0].size();
-		int delkadruheho = all_pairPoints2D[i][1].size();
-		fr << "paroveBodyFotek" << "[";
-		
-		
-		for (int n = 0; n < delkaPrvniho - 1; n++)
-		{
-			fr << "{:";
-			fr << "bod1" << all_pairPoints2D[i][0][n];
-			fr << "}";
-		}
-		for (int n = 0; n < delkadruheho - 1; n++)
-		{
-			fr << "{:";
-			fr << "bod2" << all_pairPoints2D[i][1][n];
-			fr << "}";
-		}
-		fr << "]";
-	}
-	fr.release();	
+	F = findFundamentalMat(pairPoints2D[0], pairPoints2D[1], FM_RANSAC, 0.1, 0.99);//(x1,y1),(x2,y2) => fundamentalni matice
+	E = calculationEssentialMat(F, cameraMatrix);//esencialni matice
+	decomposeFMToRotTrans(E, R1, R2, t); //F => R,t 
+
+	extensionsMultipliedInvK(pairPoints2D[0], x1K, cameraMatrix);  //(x1,y1,1)*Kinv
+	extensionsMultipliedInvK(pairPoints2D[1], x2K, cameraMatrix); //(x2,y2,1)*Kinv
+
+	getProjectionMatrix(R2, t, F, P1, P2);//tvorba projekcnich matice P1 P2
+
+	calculation3DProjectionPoints(x1K, P1, x2K, P2, points3D);
 }
-
 /**
 *metoda uklada vektor 3D bodu do souboru xml
 *@param body vektor 3D bodu
@@ -609,11 +537,13 @@ int main()
 	string nazevSouboruXmlKal = "../soubory/xmlSoubory/kalibraceData0317.xml";
 	//string nazevSouboruXmlKal = "../soubory/xmlSoubory/Kalibrace201604141626.xml";
 	Mat cameraMatrix, distCoeffs;
-	Mat_<double> R1, R2, t;// rotace R1,R2 translace t
-	vector<Point3d> x1K, x2K; // body rozsirene a pranasobene incerznima K (x,y,1)*K^(-1)
-	Matx34d P1, P2; //projekcni matice
-	vector<Point3d> body3D; // vypoctene 3D body
+
+	
+	vector<Point3d> points3D; // vypoctene 3D body
 	vector<Point3d> bodyH; //body povynasobeni matici homografie => eukleidovske body
+	vector<Point3d> pPoinsts, ePoints; // umele odpovidajici projekcni eukleidovske body
+	vector<vector<Point2d>> pairPoints2D; // pary dvojic bodu ve dvou obrazech
+
 	Size  sizeImage;
 	//vector<String> nazvySouboru;
 	readXmlCameraMatrix(nazevSouboruXmlKal, cameraMatrix, distCoeffs, sizeImage);
@@ -628,46 +558,23 @@ int main()
 	}
 	int imageMatchesCount = all_matches.size(); //pocet paru fotek
 	cout << "matchovani bodu dokonceno v poctu" << imageMatchesCount << endl;
-	/*cout << "zacatek save" << endl;
-	save2Dbody(all_keypoints, all_matches, cesta2Dbody);
-	cout << "konec save" << endl;
-	system("PAUSE");*/
 	//---------------------3D-rekonstrukce----------------------------------------------------------------------------
 	for (int i = 0; i < imageMatchesCount; i++)
 	{
+		
 		cout << i + 1 << ". z " << imageMatchesCount << " dvojic fotek" << endl;
-		vector<vector<Point2d>> pairPoints2D = getPairsOfPoints(all_matches[i], all_keypoints[i][0], all_keypoints[i][1]);
+		pairPoints2D = getPairsOfPoints(all_matches[i], all_keypoints[i][0], all_keypoints[i][1]);
 		cout << i + 1 << ": vytvoreni dvojic 2D bodu" << endl;
 
 		if (pairPoints2D[0].size() != pairPoints2D[1].size()){ //pokud pocet parovych bodu prvni a druhe fotky naodpovida ukonci program
 			cout << i + 1 << ": pocet parovych bodu prvni a druhe fotky neni stejny " << endl;
 			return 5;
 		}
-		//invertedYCoordinate(pairPoints2D[0], sizeImage);// (x1,sizeImage.height - y1)
-		//invertedYCoordinate(pairPoints2D[1], sizeImage);// (x2,sizeImage.height - y2)
-		//cout << i + 1 << ": prevraceni Y souradnice" << endl;
+		reconstraction3DObjectOfTwoPicturesMatchesPoints(pairPoints2D, cameraMatrix, points3D);
 
-		Mat F = findFundamentalMat(pairPoints2D[0], pairPoints2D[1], FM_RANSAC, 0.1, 0.99);//(x1,y1),(x2,y2) => fundamentalni matice
-		cout << i + 1 << ": vypoctena F matrix" << endl;
+		getEukleidenPointsFromProjection(points3D,pPoinsts,ePoints, bodyH);
 
-		Mat E = cameraMatrix.t()*Mat(F)*cameraMatrix; //esencialni matice
-
-		decomposeFMToRotTrans(E, R1, R2, t); //F => R,t 
-		cout << i + 1 << "rotace a translace" << endl;
-
-		extensionsMultipliedInvK(pairPoints2D[0], cameraMatrix, x1K);  //(x1,y1,1)*Kinv
-		extensionsMultipliedInvK(pairPoints2D[1], cameraMatrix, x2K); //(x2,y2,1)*Kinv
-
-		getProjectionMatrix(R2, t ,F ,P1 , P2);//tvorba projekcnich matice P1 P2
-	
-		for (int k = 0; k < x1K.size(); k++){
-			Mat_<double> X = linearLSTriangulation(x1K[k], P1, x2K[k], P2); //vypocet 3D bodu
-			//!!!!!!!!!!!!!!ovezit zda neleze z metody 4D bod!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-			body3D.push_back(Point3d(X(0), X(1), X(2)));
-		}
-		getEukleidenPointsFromProjection(body3D, bodyH);
-
-		save3DPoints(body3D, "kostka", cestaXml);
+		save3DPoints(points3D, "kostka", cestaXml);
 		save3DPoints(bodyH, "kostka_po_homografii", cestaXml);
 	}
 	system("PAUSE");
